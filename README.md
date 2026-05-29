@@ -79,6 +79,7 @@ The app uses a light theme, scenario context filters, current-vs-proposed pricin
 2. Confirm these files are committed:
    - `app.py`
    - `requirements.txt`
+   - `environment.yml`
    - `runtime.txt`
    - `.streamlit/config.toml`
    - `src/`
@@ -101,7 +102,7 @@ Python 3.11
 
 6. Deploy the app.
 
-The app loads the committed synthetic data and trained model artifacts directly, so no secrets or database setup are required for this PoC.
+The app loads the committed synthetic data and trained model artifacts directly, so no secrets or database setup are required for this PoC. `environment.yml` explicitly requests Python 3.11 and installs the pinned packages from `requirements.txt`.
 
 Important: the saved model was trained with the dependency versions pinned in `requirements.txt`. If Streamlit Cloud uses Python 3.14, packages such as `pandas==2.1.4` and `scikit-learn==1.4.2` can fail to install from source. If the app was already created with the wrong Python version, delete the app and redeploy it with Python 3.11 selected in Advanced settings.
 
