@@ -29,10 +29,10 @@ except ModuleNotFoundError:
 
 
 DRIVER_CATEGORIES = {
-    "commercial_offer": "Commercial Offer",
-    "customer_relationship": "Customer Relationship",
+    "commercial_offer": "Offer Dynamics",
+    "customer_relationship": "Customer Context",
     "competitive_pressure": "Competitive Pressure",
-    "deal_context": "Deal & Negotiation Context",
+    "deal_context": "Negotiation Context",
 }
 
 

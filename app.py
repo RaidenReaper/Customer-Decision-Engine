@@ -35,10 +35,10 @@ BRAND_FAMILY = {
 }
 
 DRIVER_CATEGORIES = {
-    "commercial_offer": "Commercial Offer",
-    "customer_relationship": "Customer Relationship",
+    "commercial_offer": "Offer Dynamics",
+    "customer_relationship": "Customer Context",
     "competitive_pressure": "Competitive Pressure",
-    "deal_context": "Deal & Negotiation Context",
+    "deal_context": "Negotiation Context",
 }
 
 OUTCOME_LABELS = ["Accepted", "Negotiated", "Rejected"]
@@ -445,20 +445,25 @@ def inject_css() -> None:
         }
         .metric-card {
             border: 1px solid var(--border); border-radius: 14px; padding: .86rem .92rem;
-            background: #FFFFFF; min-height: 112px; box-shadow: 0 1px 2px rgba(31,31,41,.04);
+            background: #FFFFFF; height: 140px; box-shadow: 0 1px 2px rgba(31,31,41,.04);
+            display: flex; flex-direction: column;
         }
         .metric-card-green {border-left: 5px solid var(--teal); background: linear-gradient(180deg, #FFFFFF 0%, var(--light-teal) 100%);}
         .metric-card-amber {border-left: 5px solid var(--orange); background: linear-gradient(180deg, #FFFFFF 0%, var(--light-orange) 100%);}
         .metric-card-red {border-left: 5px solid var(--red); background: linear-gradient(180deg, #FFFFFF 0%, #FFF1F2 100%);}
         .metric-card-blue {border-left: 5px solid var(--blue); background: linear-gradient(180deg, #FFFFFF 0%, var(--light-blue) 100%);}
         .metric-label {font-size: .76rem; color: var(--text-secondary); font-weight: 760; text-transform: uppercase;}
-        .metric-value {font-size: 1.65rem; color: var(--text-primary); font-weight: 820; margin-top: .24rem;}
+        .metric-value {font-size: 1.65rem; color: var(--text-primary); font-weight: 820; margin-top: .24rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+        .metric-value-compact {font-size: 1.15rem; line-height: 1.25;}
         .metric-help {font-size: .78rem; color: var(--text-secondary); margin-top: .22rem;}
         .current-card {
-            background: #F8F7FC; border: 1px solid var(--border); border-radius: 12px;
-            padding: .54rem .62rem; min-height: 62px;
+            background: #FFFFFF; border: 1px solid #D8D3E6; border-radius: 11px;
+            padding: 0 .75rem; min-height: 42px;
+            display: flex; align-items: center;
+            font-size: 1rem; font-weight: 780; color: var(--text-primary);
+            box-shadow: none;
         }
-        .current-value {font-size: 1rem; font-weight: 780; color: var(--text-primary); margin-top: .2rem;}
+        .current-value {font-size: 1rem; font-weight: 780; color: var(--text-primary);}
         .stacked-bar {
             display: flex; width: 100%; height: 28px; border-radius: 999px; overflow: hidden;
             background: #EDEAF5; border: 1px solid var(--border);
@@ -726,12 +731,13 @@ def render_header(model_version: str) -> None:
     )
 
 
-def render_metric_card(label: str, value: str, help_text: str, css_class: str) -> None:
+def render_metric_card(label: str, value: str, help_text: str, css_class: str, compact_value: bool = False) -> None:
+    value_class = "metric-value metric-value-compact" if compact_value else "metric-value"
     st.markdown(
         f"""
         <div class="metric-card {css_class}">
             <div class="metric-label">{escape(label)}</div>
-            <div class="metric-value">{escape(value)}</div>
+            <div class="{value_class}">{escape(value)}</div>
             <div class="metric-help">{escape(help_text)}</div>
         </div>
         """,
@@ -741,12 +747,7 @@ def render_metric_card(label: str, value: str, help_text: str, css_class: str) -
 
 def render_current_card(value: str, helper: str) -> None:
     st.markdown(
-        f"""
-        <div class="current-card">
-            <div class="lever-value-label">Current</div>
-            <div class="current-value">{escape(value)}</div>
-        </div>
-        """,
+        f"<div class='current-card'>{escape(value)}</div>",
         unsafe_allow_html=True,
     )
 
@@ -763,8 +764,9 @@ def render_lever(
     format_string: str | None = None,
 ) -> None:
     st.markdown(f"<div class='lever-name'>{escape(label)}</div>", unsafe_allow_html=True)
-    left, right = st.columns([0.46, 0.54], gap="small")
+    left, right = st.columns([0.5, 0.5], gap="small")
     with left:
+        st.markdown("<div class='lever-value-label'>Current</div>", unsafe_allow_html=True)
         render_current_card(format_value(current_value, value_type), helper)
     with right:
         st.markdown("<div class='lever-value-label'>Proposed</div>", unsafe_allow_html=True)
@@ -1013,6 +1015,41 @@ def render_saved_scenarios() -> None:
         st.dataframe(pd.DataFrame(saved), width="stretch", hide_index=True)
 
 
+def render_customer_deep_dive(selected_row: pd.Series) -> None:
+    customer_name = escape(str(selected_row.get("customer_name", "—")))
+    segment = escape(str(selected_row.get("customer_segment", "—")))
+    tier = escape(str(selected_row.get("customer_tier", selected_row.get("customer_class", "—"))))
+    region = escape(str(selected_row.get("region", "—")))
+    with st.expander("Customer Deep Dive  •  Work in Progress", expanded=False):
+        st.markdown(
+            f"""
+            <div class='section-subtitle' style='margin-top:0;'>Customer-level intelligence — relationship history, attainment trends, and competitive footprint. Coming soon.</div>
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:.6rem; margin-top:.4rem;">
+                <div class='current-card' style='flex-direction:column; align-items:flex-start; min-height:62px; padding:.5rem .75rem;'>
+                    <div class='lever-value-label'>Customer</div>
+                    <div class='current-value'>{customer_name}</div>
+                </div>
+                <div class='current-card' style='flex-direction:column; align-items:flex-start; min-height:62px; padding:.5rem .75rem;'>
+                    <div class='lever-value-label'>Segment</div>
+                    <div class='current-value'>{segment}</div>
+                </div>
+                <div class='current-card' style='flex-direction:column; align-items:flex-start; min-height:62px; padding:.5rem .75rem;'>
+                    <div class='lever-value-label'>Tier</div>
+                    <div class='current-value'>{tier}</div>
+                </div>
+                <div class='current-card' style='flex-direction:column; align-items:flex-start; min-height:62px; padding:.5rem .75rem;'>
+                    <div class='lever-value-label'>Region</div>
+                    <div class='current-value'>{region}</div>
+                </div>
+            </div>
+            <div style='margin-top:.7rem; color:var(--text-secondary); font-size:.82rem; font-style:italic;'>
+                Planned: relationship score trend, prior-season attainment curve, competitive share-of-voice, escalation history.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 def choose_context(data: pd.DataFrame) -> tuple[pd.Series, str, list[str]]:
     with st.container(border=True):
         st.markdown("<div class='section-title'>Scenario Context</div>", unsafe_allow_html=True)
@@ -1129,7 +1166,7 @@ def render_outcome(result: dict[str, Any] | None) -> None:
     with metric_cols[2]:
         render_metric_card("Rejected", f"{probabilities['Rejected']:.0%}", "Likelihood customer rejects the offer", "metric-card-red")
     with metric_cols[3]:
-        render_metric_card("Recommended", result["recommended_outcome"], "Highest probability outcome", "metric-card-blue")
+        render_metric_card("Recommended", result["recommended_outcome"], "Highest probability outcome", "metric-card-blue", compact_value=True)
     with metric_cols[4]:
         render_metric_card("Confidence", f"{result['confidence_score']:.0f}%", f"{result['confidence_band']} confidence band", "metric-card-blue")
 
@@ -1218,6 +1255,7 @@ def main() -> None:
     st.session_state.setdefault("latest_result", None)
 
     selected_row, product_scope, selected_brands = choose_context(data)
+    render_customer_deep_dive(selected_row)
     context_signature = "|".join(
         [
             str(selected_row["customer_name"]),
