@@ -6,16 +6,20 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+import joblib
 import pandas as pd
 import streamlit as st
 
-from src.scoring import (
-    load_feature_metadata,
-    load_model,
-    load_model_metadata,
-    score_customer_response,
+from src.scoring import score_customer_response
+from src.utils import (
+    DATA_PATH,
+    FEATURE_COLUMNS_PATH,
+    MODEL_METADATA_PATH,
+    MODEL_PATH,
+    calculate_derived_fields,
+    load_contracting_data,
+    read_json,
 )
-from src.utils import DATA_PATH, MODEL_PATH, calculate_derived_fields, load_contracting_data
 
 
 BRAND_FAMILY = {
@@ -32,6 +36,26 @@ DRIVER_CATEGORIES = {
     "competitive_pressure": "Competitive Pressure",
     "deal_context": "Deal & Negotiation Context",
 }
+
+
+def load_model(model_path: Path = MODEL_PATH):
+    if not model_path.exists():
+        raise FileNotFoundError(
+            "Model file is missing. Please run python src/generate_dummy_data.py and python src/train_model.py first."
+        )
+    return joblib.load(model_path)
+
+
+def load_feature_metadata(path: Path = FEATURE_COLUMNS_PATH) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError("Feature metadata is missing. Please run python src/train_model.py first.")
+    return read_json(path)
+
+
+def load_model_metadata(path: Path = MODEL_METADATA_PATH) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return read_json(path)
 
 LEVER_CONFIGS = [
     {
