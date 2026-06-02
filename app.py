@@ -10,7 +10,6 @@ import pandas as pd
 import streamlit as st
 
 from src.scoring import (
-    DRIVER_CATEGORIES,
     load_feature_metadata,
     load_model,
     load_model_metadata,
@@ -25,6 +24,13 @@ BRAND_FAMILY = {
     "VaxiGuard RSV": "Respiratory",
     "PneuProtect": "Pneumococcal",
     "TravelVax": "Travel Vaccine",
+}
+
+DRIVER_CATEGORIES = {
+    "commercial_offer": "Commercial Offer",
+    "customer_relationship": "Customer Relationship",
+    "competitive_pressure": "Competitive Pressure",
+    "deal_context": "Deal & Negotiation Context",
 }
 
 LEVER_CONFIGS = [
