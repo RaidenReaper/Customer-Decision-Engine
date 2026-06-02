@@ -254,6 +254,20 @@ def inject_css() -> None:
             border: 1px solid var(--border); border-radius: 14px; padding: .48rem;
             background: #FFFFFF; margin-bottom: .52rem;
         }
+        .lever-name {
+            font-size: .98rem;
+            font-weight: 820;
+            color: var(--text-primary);
+            margin: .48rem 0 .42rem 0;
+        }
+        .lever-value-label {
+            font-size: .72rem;
+            font-weight: 800;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: .035rem;
+            margin-bottom: .28rem;
+        }
         .lever-input-wrap {padding-top: .05rem;}
 
         /* Force Streamlit/BaseWeb controls onto the light product theme. */
@@ -462,11 +476,11 @@ def render_metric_card(label: str, value: str, help_text: str, css_class: str) -
     )
 
 
-def render_current_card(label: str, value: str, helper: str) -> None:
+def render_current_card(value: str, helper: str) -> None:
     st.markdown(
         f"""
         <div class="current-card">
-            <div class="small-label">Current {escape(label)}</div>
+            <div class="lever-value-label">Current</div>
             <div class="current-value">{escape(value)}</div>
             <div class="helper-text">{escape(helper)}</div>
         </div>
@@ -486,10 +500,12 @@ def render_lever(
     step: float | int,
     format_string: str | None = None,
 ) -> None:
+    st.markdown(f"<div class='lever-name'>{escape(label)}</div>", unsafe_allow_html=True)
     left, right = st.columns([0.38, 0.62], gap="small")
     with left:
-        render_current_card(label, format_value(current_value, value_type), helper)
+        render_current_card(format_value(current_value, value_type), helper)
     with right:
+        st.markdown("<div class='lever-value-label'>Proposed</div>", unsafe_allow_html=True)
         st.number_input(
             f"Proposed {label}",
             min_value=min_value,
@@ -497,6 +513,7 @@ def render_lever(
             step=step,
             format=format_string,
             key=state_key,
+            label_visibility="collapsed",
         )
 
 
