@@ -112,6 +112,43 @@ def test_multi_product_filter_and_save_scenario_table():
     assert {"Accepted probability", "Negotiated probability", "Rejected probability"}.issubset(saved[0])
 
 
+def test_filter_switching_scope_toggle_and_empty_multi_select_stay_stable():
+    app = _app()
+
+    segment_filter = _by_label(app.selectbox, "Customer Segment")
+    for segment in segment_filter.options:
+        _by_label(app.selectbox, "Customer Segment").set_value(segment).run(timeout=45)
+        _assert_clean(app)
+
+        customer_filter = _by_label(app.selectbox, "Customer")
+        customer_filter.set_value(customer_filter.options[-1]).run(timeout=45)
+        _assert_clean(app)
+
+        _by_label(app.selectbox, "Product Scope").set_value("Multi Product").run(timeout=45)
+        _assert_clean(app)
+
+        brand_filter = _by_label(app.multiselect, "Brand / Brands")
+        brand_filter.set_value([]).run(timeout=45)
+        _assert_clean(app)
+        assert len(app.number_input) >= 8
+
+        result = _run_simulation(app)
+        assert result["recommended_outcome"] in {"Accepted", "Negotiated", "Rejected"}
+
+        _by_label(app.button, "Reset Inputs").click().run(timeout=45)
+        _assert_clean(app)
+        assert app.session_state["latest_result"] is None
+
+        _by_label(app.selectbox, "Product Scope").set_value("Single Product").run(timeout=45)
+        _assert_clean(app)
+        brand_select = _by_label(app.selectbox, "Brand / Brands")
+        brand_select.set_value(brand_select.options[0]).run(timeout=45)
+        _assert_clean(app)
+
+        result = _run_simulation(app)
+        assert result["recommended_outcome"] in {"Accepted", "Negotiated", "Rejected"}
+
+
 @pytest.mark.parametrize(
     "values",
     [

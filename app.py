@@ -456,10 +456,9 @@ def inject_css() -> None:
         .metric-help {font-size: .78rem; color: var(--text-secondary); margin-top: .22rem;}
         .current-card {
             background: #F8F7FC; border: 1px solid var(--border); border-radius: 12px;
-            padding: .54rem .62rem; min-height: 68px;
+            padding: .54rem .62rem; min-height: 62px;
         }
-        .current-value {font-size: 1rem; font-weight: 780; color: var(--text-primary); margin-top: .18rem;}
-        .helper-text {font-size: .75rem; color: var(--text-secondary); margin-top: .08rem;}
+        .current-value {font-size: 1rem; font-weight: 780; color: var(--text-primary); margin-top: .2rem;}
         .stacked-bar {
             display: flex; width: 100%; height: 28px; border-radius: 999px; overflow: hidden;
             background: #EDEAF5; border: 1px solid var(--border);
@@ -549,6 +548,7 @@ def inject_css() -> None:
         [data-testid="stNumberInput"] input {
             background-color: #FFFFFF !important;
             font-weight: 760 !important;
+            min-height: 42px !important;
         }
         [data-testid="stNumberInput"] button,
         [data-testid="stNumberInput"] button[aria-label],
@@ -649,6 +649,28 @@ def lever_state_key(brand: str, lever_key: str) -> str:
     return f"proposed_{slugify(brand)}_{lever_key}"
 
 
+def safe_selectbox(container, label: str, options: list[Any], key: str) -> Any:
+    if not options:
+        st.error(f"No options are available for {label}.")
+        st.stop()
+    if st.session_state.get(key) not in options:
+        st.session_state[key] = options[0]
+    return container.selectbox(label, options, key=key)
+
+
+def safe_multiselect(container, label: str, options: list[Any], default: list[Any], key: str) -> list[Any]:
+    if not options:
+        st.error(f"No options are available for {label}.")
+        st.stop()
+    valid_default = [value for value in default if value in options] or options[:1]
+    current = st.session_state.get(key, valid_default)
+    if not isinstance(current, list):
+        current = valid_default
+    selected = [value for value in current if value in options]
+    st.session_state[key] = selected or valid_default
+    return container.multiselect(label, options, key=key)
+
+
 def default_for_lever(row: pd.Series, config: dict[str, Any]) -> float | int:
     if config["key"] == "multi_year_discount_pct":
         return float(row.get("multi_year_discount_pct", 0.0))
@@ -723,7 +745,6 @@ def render_current_card(value: str, helper: str) -> None:
         <div class="current-card">
             <div class="lever-value-label">Current</div>
             <div class="current-value">{escape(value)}</div>
-            <div class="helper-text">{escape(helper)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -742,7 +763,7 @@ def render_lever(
     format_string: str | None = None,
 ) -> None:
     st.markdown(f"<div class='lever-name'>{escape(label)}</div>", unsafe_allow_html=True)
-    left, right = st.columns([0.38, 0.62], gap="small")
+    left, right = st.columns([0.46, 0.54], gap="small")
     with left:
         render_current_card(format_value(current_value, value_type), helper)
     with right:
@@ -997,29 +1018,31 @@ def choose_context(data: pd.DataFrame) -> tuple[pd.Series, str, list[str]]:
         st.markdown("<div class='section-title'>Scenario Context</div>", unsafe_allow_html=True)
         st.markdown("<div class='section-subtitle'>Select the customer, contract, product scope, season, and negotiation round.</div>", unsafe_allow_html=True)
         top = st.columns([1, 1.15, 1.5, .9], gap="small")
-        segment = top[0].selectbox("Customer Segment", sorted(data["customer_segment"].unique()))
+        segment = safe_selectbox(top[0], "Customer Segment", sorted(data["customer_segment"].unique()), "filter_customer_segment")
         segment_data = data[data["customer_segment"] == segment]
-        customer = top[1].selectbox("Customer", sorted(segment_data["customer_name"].unique()))
+        customer = safe_selectbox(top[1], "Customer", sorted(segment_data["customer_name"].unique()), "filter_customer")
         customer_data = segment_data[segment_data["customer_name"] == customer]
-        contract = top[2].selectbox("Contract Name", sorted(customer_data["contract_name"].unique()))
+        contract = safe_selectbox(top[2], "Contract Name", sorted(customer_data["contract_name"].unique()), "filter_contract")
         contract_data = customer_data[customer_data["contract_name"] == contract]
-        season = top[3].selectbox("Season", sorted(contract_data["season_id"].unique()))
+        season = safe_selectbox(top[3], "Season", sorted(contract_data["season_id"].unique()), "filter_season")
 
         bottom = st.columns([1, 1.15, 1.5], gap="small")
         season_data = contract_data[contract_data["season_id"] == season]
         round_options = sorted(season_data["round_number"].unique())
-        round_number = bottom[0].selectbox("Round Number", round_options)
+        round_number = safe_selectbox(bottom[0], "Round Number", round_options, "filter_round_number")
         round_data = season_data[season_data["round_number"] == round_number]
-        product_scope = bottom[1].selectbox("Product Scope", ["Single Product", "Multi Product"])
-        available_brands = sorted(data["brand_name"].unique())
+        product_scope = safe_selectbox(bottom[1], "Product Scope", ["Single Product", "Multi Product"], "filter_product_scope")
+        available_brands = sorted(contract_data["brand_name"].dropna().unique())
+        if not available_brands:
+            available_brands = sorted(customer_data["brand_name"].dropna().unique())
+        if not available_brands:
+            available_brands = sorted(data["brand_name"].dropna().unique())
         if product_scope == "Single Product":
-            selected_brand = bottom[2].selectbox("Brand / Brands", available_brands)
+            selected_brand = safe_selectbox(bottom[2], "Brand / Brands", available_brands, "filter_single_brand")
             selected_brands = [selected_brand]
         else:
             default_brands = available_brands[: min(2, len(available_brands))]
-            selected_brands = bottom[2].multiselect("Brand / Brands", available_brands, default=default_brands)
-            if not selected_brands:
-                selected_brands = default_brands
+            selected_brands = safe_multiselect(bottom[2], "Brand / Brands", available_brands, default_brands, "filter_multi_brands")
 
     selected_row = round_data.iloc[0] if not round_data.empty else contract_data.iloc[0]
     return selected_row, product_scope, selected_brands
@@ -1027,11 +1050,24 @@ def choose_context(data: pd.DataFrame) -> tuple[pd.Series, str, list[str]]:
 
 def get_product_rows(data: pd.DataFrame, selected_row: pd.Series, selected_brands: list[str]) -> dict[str, pd.Series]:
     product_rows: dict[str, pd.Series] = {}
-    customer_matches = data[data["customer_name"] == selected_row["customer_name"]]
     for brand in selected_brands:
-        brand_matches = customer_matches[customer_matches["brand_name"] == brand]
-        if brand_matches.empty:
-            brand_matches = data[data["brand_name"] == brand]
+        match_levels = [
+            data[
+                (data["customer_name"] == selected_row["customer_name"])
+                & (data["contract_name"] == selected_row["contract_name"])
+                & (data["season_id"] == selected_row["season_id"])
+                & (data["round_number"] == selected_row["round_number"])
+                & (data["brand_name"] == brand)
+            ],
+            data[
+                (data["customer_name"] == selected_row["customer_name"])
+                & (data["contract_name"] == selected_row["contract_name"])
+                & (data["brand_name"] == brand)
+            ],
+            data[(data["customer_name"] == selected_row["customer_name"]) & (data["brand_name"] == brand)],
+            data[data["brand_name"] == brand],
+        ]
+        brand_matches = next((matches for matches in match_levels if not matches.empty), pd.DataFrame())
         product_rows[brand] = brand_matches.iloc[0] if not brand_matches.empty else selected_row
     return product_rows
 
