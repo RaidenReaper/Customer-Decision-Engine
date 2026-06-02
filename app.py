@@ -10,7 +10,11 @@ import joblib
 import pandas as pd
 import streamlit as st
 
-from src.scoring import score_customer_response
+try:
+    from src.scoring import score_customer_response as external_score_customer_response
+except ImportError:
+    external_score_customer_response = None
+
 from src.utils import (
     DATA_PATH,
     FEATURE_COLUMNS_PATH,
@@ -37,6 +41,8 @@ DRIVER_CATEGORIES = {
     "deal_context": "Deal & Negotiation Context",
 }
 
+OUTCOME_LABELS = ["Accepted", "Negotiated", "Rejected"]
+
 
 def load_model(model_path: Path = MODEL_PATH):
     if not model_path.exists():
@@ -56,6 +62,211 @@ def load_model_metadata(path: Path = MODEL_METADATA_PATH) -> dict[str, Any]:
     if not path.exists():
         return {}
     return read_json(path)
+
+
+def local_driver(
+    name: str,
+    direction: str,
+    impact_pp: int,
+    explanation: str,
+    category: str,
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "direction": direction,
+        "impact_pp": impact_pp,
+        "explanation": explanation,
+        "category": category,
+    }
+
+
+def local_calculate_driver_influence(user_inputs: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    inputs = {**user_inputs, **calculate_derived_fields(user_inputs)}
+    drivers: dict[str, list[dict[str, Any]]] = {
+        "commercial_offer": [],
+        "customer_relationship": [],
+        "competitive_pressure": [],
+        "deal_context": [],
+        "watchouts": [],
+    }
+
+    if inputs["rebate_pct"] >= inputs["prior_rebate_pct"] + 3:
+        drivers["commercial_offer"].append(
+            local_driver("Rebate support", "Positive", 5, "Proposed rebate is above the prior contract level.", "commercial_offer")
+        )
+    elif inputs["rebate_pct"] < inputs["prior_rebate_pct"]:
+        drivers["commercial_offer"].append(
+            local_driver("Rebate support", "Negative", -4, "Proposed rebate is below the prior contract level.", "commercial_offer")
+        )
+
+    if inputs["price_gap_vs_prior"] > 25:
+        drivers["commercial_offer"].append(
+            local_driver("Net price movement", "Negative", -6, "Net price is materially above prior year.", "commercial_offer")
+        )
+        drivers["watchouts"].append(
+            local_driver("Price increase", "Watchout", 0, "Net price is more than 25% above prior net price.", "commercial_offer")
+        )
+    elif inputs["price_gap_vs_prior"] > 4:
+        drivers["commercial_offer"].append(
+            local_driver("Net price movement", "Negative", -3, "Net price is above prior year.", "commercial_offer")
+        )
+    elif inputs["price_gap_vs_prior"] < -3:
+        drivers["commercial_offer"].append(
+            local_driver("Net price movement", "Positive", 4, "Net price is more favorable than prior year.", "commercial_offer")
+        )
+
+    if inputs["reimbursement_rate_pct"] >= 86:
+        drivers["commercial_offer"].append(
+            local_driver("Reimbursement support", "Positive", 5, "Reimbursement rate is favorable for access and pull-through.", "commercial_offer")
+        )
+    elif inputs["reimbursement_rate_pct"] < 60:
+        drivers["commercial_offer"].append(
+            local_driver("Reimbursement support", "Negative", -7, "Reimbursement rate is well below expected support levels.", "commercial_offer")
+        )
+        drivers["watchouts"].append(
+            local_driver("Low reimbursement", "Watchout", 0, "Reimbursement below 60% may create customer pushback.", "commercial_offer")
+        )
+
+    if inputs["volume_gap_vs_prior"] > 50:
+        drivers["watchouts"].append(
+            local_driver("Volume validation", "Watchout", 0, "Volume commitment exceeds 150% of prior volume.", "deal_context")
+        )
+    elif inputs["volume_gap_vs_prior"] >= 5:
+        drivers["commercial_offer"].append(
+            local_driver("Volume commitment", "Positive", 3, "Volume commitment is higher than prior volume.", "commercial_offer")
+        )
+
+    if inputs["market_share_commitment_pct"] > 80:
+        drivers["deal_context"].append(
+            local_driver("Aggressive share ask", "Negative", -4, "Market share commitment is above 80%.", "deal_context")
+        )
+        drivers["watchouts"].append(
+            local_driver("Aggressive share target", "Watchout", 0, "Market share commitment is above 80%.", "deal_context")
+        )
+    elif inputs["market_share_gap_vs_prior"] >= 4:
+        drivers["commercial_offer"].append(
+            local_driver("Market share commitment", "Positive", 3, "Market share commitment improves versus prior year.", "commercial_offer")
+        )
+
+    if inputs["historical_win_rate"] >= 0.70:
+        drivers["customer_relationship"].append(
+            local_driver("Historical relationship", "Positive", 5, "Customer has a strong historical win rate.", "customer_relationship")
+        )
+    elif inputs["historical_win_rate"] < 0.45:
+        drivers["customer_relationship"].append(
+            local_driver("Historical relationship", "Negative", -5, "Customer has a weaker historical acceptance pattern.", "customer_relationship")
+        )
+
+    if inputs["prior_year_attainment_pct"] >= 95:
+        drivers["customer_relationship"].append(
+            local_driver("Prior attainment", "Positive", 4, "Customer has strong prior attainment against contracted goals.", "customer_relationship")
+        )
+    elif inputs["prior_year_attainment_pct"] < 75:
+        drivers["customer_relationship"].append(
+            local_driver("Prior attainment", "Negative", -4, "Weak prior attainment lowers confidence in proposed commitments.", "customer_relationship")
+        )
+
+    if inputs["competitive_pressure_score"] >= 70:
+        drivers["competitive_pressure"].append(
+            local_driver("Competitive pressure", "Negative", -6, "Competitive pressure is high in this account.", "competitive_pressure")
+        )
+    elif inputs["competitive_pressure_score"] <= 35:
+        drivers["competitive_pressure"].append(
+            local_driver("Competitive position", "Positive", 3, "Competitive pressure is relatively low.", "competitive_pressure")
+        )
+    else:
+        drivers["competitive_pressure"].append(
+            local_driver("Competitive position", "Neutral", 0, "Competitive pressure is moderate.", "competitive_pressure")
+        )
+
+    if inputs["returnability_pct"] < inputs["prior_returnability_pct"] - 2:
+        drivers["deal_context"].append(
+            local_driver("Returnability", "Negative", -3, "Returnability is below customer expectation based on prior terms.", "deal_context")
+        )
+    if inputs["cancellation_pct"] < inputs["prior_cancellation_pct"] - 2:
+        drivers["deal_context"].append(
+            local_driver("Cancellation allowance", "Negative", -3, "Cancellation allowance is lower than prior contract.", "deal_context")
+        )
+    if inputs["deal_attractiveness_score"] >= 68:
+        drivers["deal_context"].append(
+            local_driver("Deal attractiveness", "Positive", 5, "Overall economics are attractive relative to historical behavior.", "deal_context")
+        )
+    elif inputs["deal_attractiveness_score"] < 45:
+        drivers["deal_context"].append(
+            local_driver("Deal attractiveness", "Negative", -5, "Overall economics are below the attractive range for this customer.", "deal_context")
+        )
+
+    defaults = {
+        "commercial_offer": local_driver("Offer balance", "Neutral", 0, "Commercial terms are broadly in line with the baseline.", "commercial_offer"),
+        "customer_relationship": local_driver("Relationship baseline", "Neutral", 0, "No dominant relationship signal was detected.", "customer_relationship"),
+        "competitive_pressure": local_driver("Competitive position", "Neutral", 0, "Competitive pressure is within the expected range.", "competitive_pressure"),
+        "deal_context": local_driver("Deal context", "Neutral", 0, "Deal context does not show a major directional signal.", "deal_context"),
+    }
+    for category, default in defaults.items():
+        if not drivers[category]:
+            drivers[category].append(default)
+    if not drivers["watchouts"]:
+        drivers["watchouts"].append(
+            local_driver("Monitor assumptions", "Watchout", 0, "Validate assumptions before using this scenario outside the demo.", "deal_context")
+        )
+    return drivers
+
+
+def local_score_customer_response(
+    model,
+    user_inputs: dict[str, Any],
+    feature_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    row = {**user_inputs, **calculate_derived_fields(user_inputs)}
+    feature_columns = feature_metadata["feature_columns"]
+    input_df = pd.DataFrame([{column: row[column] for column in feature_columns}])
+
+    probability_values = model.predict_proba(input_df)[0]
+    probabilities = {label: float(probability_values[index]) for index, label in enumerate(OUTCOME_LABELS)}
+    sorted_probabilities = sorted(probabilities.values(), reverse=True)
+    recommended_outcome = OUTCOME_LABELS[int(probability_values.argmax())]
+    top_two_gap = (sorted_probabilities[0] - sorted_probabilities[1]) * 100
+    confidence_score = probabilities[recommended_outcome] * 100
+    if top_two_gap < 10:
+        confidence_score = max(confidence_score - 10, 0)
+    confidence_score = round(min(confidence_score, 100), 1)
+    confidence_band = "High" if confidence_score >= 75 else "Moderate" if confidence_score >= 55 else "Low"
+
+    drivers = local_calculate_driver_influence(user_inputs)
+    positive_driver = next(
+        (driver for category in DRIVER_CATEGORIES for driver in drivers[category] if driver["direction"] == "Positive"),
+        drivers["commercial_offer"][0],
+    )
+    negative_driver = next(
+        (driver for category in DRIVER_CATEGORIES for driver in drivers[category] if driver["direction"] == "Negative"),
+        drivers["competitive_pressure"][0],
+    )
+    watchout = drivers["watchouts"][0]
+    narrative = (
+        f"The scenario is currently recommended as {recommended_outcome} with a "
+        f"{confidence_band.lower()} confidence score of {confidence_score:.1f}%. "
+        f"The strongest supportive signal is {positive_driver['name'].lower()}, while "
+        f"{negative_driver['name'].lower()} is the main pressure point to manage. "
+        f"The team should watch {watchout['name'].lower()} before advancing the offer."
+    )
+
+    return {
+        "probabilities": probabilities,
+        "predicted_outcome": recommended_outcome,
+        "recommended_outcome": recommended_outcome,
+        "confidence_score": confidence_score,
+        "confidence_band": confidence_band,
+        "top_two_gap_pp": round(top_two_gap, 1),
+        "drivers": drivers,
+        "watchouts": drivers["watchouts"],
+        "narrative_summary": narrative,
+    }
+
+
+def score_customer_response(model, user_inputs: dict[str, Any], feature_metadata: dict[str, Any]) -> dict[str, Any]:
+    if external_score_customer_response is not None:
+        return external_score_customer_response(model, user_inputs, feature_metadata)
+    return local_score_customer_response(model, user_inputs, feature_metadata)
 
 LEVER_CONFIGS = [
     {
