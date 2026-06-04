@@ -6,6 +6,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+import altair as alt
 import joblib
 import pandas as pd
 import streamlit as st
@@ -314,15 +315,15 @@ LEVER_CONFIGS = [
         "format": "%.1f",
     },
     {
-        "label": "Reimbursement Rate %",
+        "label": "WAC Price",
         "key": "reimbursement_rate_pct",
-        "current_column": "reimbursement_rate_pct",
-        "value_type": "percent",
-        "helper": "Expected reimbursement",
+        "current_column": "prior_net_price",
+        "value_type": "currency",
+        "helper": "$/dose (Wholesale Acquisition Cost)",
         "min_value": 0.0,
-        "max_value": 150.0,
-        "step": 0.5,
-        "format": "%.1f",
+        "max_value": 300.0,
+        "step": 0.1,
+        "format": "%.2f",
     },
     {
         "label": "Volume Commitment",
@@ -1015,6 +1016,451 @@ def render_saved_scenarios() -> None:
         st.dataframe(pd.DataFrame(saved), width="stretch", hide_index=True)
 
 
+def _deep_dive_dummy_data() -> dict[str, pd.DataFrame]:
+    """Static dummy data for the Customer Deep Dive screen.
+
+    Scoped to the default customer; the same dataset displays regardless of which
+    customer is picked in the Scenario Context filters (per spec).
+    """
+    seasons = ["2022-23", "2023-24", "2024-25", "2025-26"]
+    products = ["FluShield QIV", "VaxiGuard RSV", "PneuProtect"]
+    base_doses = {"FluShield QIV": 95, "VaxiGuard RSV": 42, "PneuProtect": 28}
+    attainment = {
+        "FluShield QIV": [82, 88, 94, 91],
+        "VaxiGuard RSV": [76, 84, 92, 96],
+        "PneuProtect": [71, 78, 83, 80],
+    }
+    sales_rows = []
+    for product in products:
+        for i, season in enumerate(seasons):
+            sales_rows.append(
+                {
+                    "Season": season,
+                    "Product": product,
+                    "Doses (000)": round(base_doses[product] * (1 + 0.04 * i), 1),
+                    "Attainment %": attainment[product][i],
+                }
+            )
+
+    # Multi-manufacturer market share trend (within this customer)
+    manufacturer_trend_rows = []
+    manufacturer_curves = {
+        "Sanofi":   [48, 52, 58, 62],
+        "Sequirus": [32, 30, 26, 22],
+        "Pfizer":   [12, 10,  9,  8],
+        "GSK":      [ 8,  8,  7,  8],
+    }
+    for mfg, values in manufacturer_curves.items():
+        for season, value in zip(seasons, values):
+            manufacturer_trend_rows.append({"Season": season, "Manufacturer": mfg, "Share %": value})
+    market_share = pd.DataFrame(manufacturer_trend_rows)
+
+    # Latest-season snapshot for "Current Purchasing" stacked bar
+    current_purchasing = pd.DataFrame(
+        [
+            {"Group": "Mix", "Manufacturer": "Sanofi",   "Share": 62},
+            {"Group": "Mix", "Manufacturer": "Sequirus", "Share": 22},
+            {"Group": "Mix", "Manufacturer": "Pfizer",   "Share": 8},
+            {"Group": "Mix", "Manufacturer": "GSK",      "Share": 8},
+        ]
+    )
+
+    brand_share = pd.DataFrame(
+        [
+            {"Brand": "FluShield QIV", "Share": 42},
+            {"Brand": "VaxiGuard RSV", "Share": 24},
+            {"Brand": "PneuProtect", "Share": 18},
+            {"Brand": "FluShield HD", "Share": 10},
+            {"Brand": "TravelVax", "Share": 6},
+        ]
+    )
+
+    segment_share = pd.DataFrame(
+        [
+            {"Account": "This customer", "Share": 22},
+            {"Account": "CVS Health", "Share": 28},
+            {"Account": "Walmart Pharmacy", "Share": 18},
+            {"Account": "HEB", "Share": 12},
+            {"Account": "Other", "Share": 20},
+        ]
+    )
+
+    return {
+        "sales": pd.DataFrame(sales_rows),
+        "market_share": market_share,
+        "current_purchasing": current_purchasing,
+        "brand_share": brand_share,
+        "segment_share": segment_share,
+    }
+
+
+def _profile_card(label: str, value: str) -> str:
+    return (
+        "<div class='current-card' style='flex-direction:column; align-items:flex-start;"
+        " min-height:62px; padding:.5rem .75rem;'>"
+        f"<div class='lever-value-label'>{escape(label)}</div>"
+        f"<div class='current-value'>{escape(value)}</div></div>"
+    )
+
+
+def render_customer_deep_dive_screen(selected_row: pd.Series) -> None:
+    """Full-screen Customer Deep Dive (Screen 2)."""
+    customer_name = str(selected_row.get("customer_name", "—"))
+    segment = str(selected_row.get("customer_segment", "—"))
+    tier = str(selected_row.get("customer_tier", selected_row.get("customer_class", "—")))
+    region = str(selected_row.get("region", "—"))
+    dummy = _deep_dive_dummy_data()
+
+    palette = ["#7432A8", "#36A39B", "#F37000", "#4285F4", "#B44E00"]
+
+    # =================== Section 1: Customer Profile ===================
+    with st.container(border=True):
+        st.markdown("<div class='section-title'>Customer Profile</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='section-subtitle'>Account context, sales attainment, and share trends.</div>",
+            unsafe_allow_html=True,
+        )
+        cards_html = (
+            "<div style='display:grid; grid-template-columns: repeat(4, 1fr); gap:.6rem; margin-top:.4rem;'>"
+            + _profile_card("Customer", customer_name)
+            + _profile_card("Segment", segment)
+            + _profile_card("Tier", tier)
+            + _profile_card("Region", region)
+            + "</div>"
+        )
+        st.markdown(cards_html, unsafe_allow_html=True)
+
+        st.markdown("<div style='height:.8rem;'></div>", unsafe_allow_html=True)
+        chart_cols = st.columns(2, gap="medium")
+        with chart_cols[0]:
+            st.markdown(
+                "<div class='small-label'>Sales trend & contract attainment — by product</div>",
+                unsafe_allow_html=True,
+            )
+            bars = (
+                alt.Chart(dummy["sales"])
+                .mark_bar(opacity=0.88)
+                .encode(
+                    x=alt.X("Season:O", title=None),
+                    y=alt.Y("Doses (000):Q", title="Doses (000)"),
+                    color=alt.Color(
+                        "Product:N",
+                        scale=alt.Scale(range=palette[:3]),
+                        legend=alt.Legend(orient="bottom", title=None),
+                    ),
+                    xOffset="Product:N",
+                    tooltip=["Season", "Product", "Doses (000)", "Attainment %"],
+                )
+            )
+            attainment_avg = (
+                dummy["sales"]
+                .groupby("Season", as_index=False)["Attainment %"].mean()
+                .rename(columns={"Attainment %": "Avg attainment %"})
+            )
+            line = (
+                alt.Chart(attainment_avg)
+                .mark_line(point=alt.OverlayMarkDef(filled=True, size=70), strokeWidth=2.5, color="#1F1F29")
+                .encode(
+                    x=alt.X("Season:O"),
+                    y=alt.Y(
+                        "Avg attainment %:Q",
+                        title="Avg attainment %",
+                        scale=alt.Scale(domain=[60, 100]),
+                    ),
+                    tooltip=["Season", alt.Tooltip("Avg attainment %:Q", format=".1f")],
+                )
+            )
+            chart = alt.layer(bars, line).resolve_scale(y="independent").properties(height=260)
+            st.altair_chart(chart, use_container_width=True)
+
+        with chart_cols[1]:
+            st.markdown(
+                "<div class='small-label'>Market share trend — manufacturer share within this customer</div>",
+                unsafe_allow_html=True,
+            )
+            mfg_chart = (
+                alt.Chart(dummy["market_share"])
+                .mark_line(
+                    point=alt.OverlayMarkDef(filled=True, size=70),
+                    strokeWidth=2.6,
+                    interpolate="monotone",
+                )
+                .encode(
+                    x=alt.X("Season:O", title=None),
+                    y=alt.Y("Share %:Q", title="Share % of customer vaccine spend", scale=alt.Scale(domain=[0, 70])),
+                    color=alt.Color(
+                        "Manufacturer:N",
+                        scale=alt.Scale(
+                            domain=["Sanofi", "Sequirus", "Pfizer", "GSK"],
+                            range=["#7432A8", "#F37000", "#4285F4", "#36A39B"],
+                        ),
+                        legend=alt.Legend(orient="bottom", title=None),
+                    ),
+                    tooltip=["Season", "Manufacturer", alt.Tooltip("Share %:Q", format=".1f")],
+                )
+                .properties(height=260)
+            )
+            st.altair_chart(mfg_chart, use_container_width=True)
+
+        # Row 3 of Customer Profile: Current Purchasing | Customer Relationship Level
+        st.markdown("<div style='height:.4rem;'></div>", unsafe_allow_html=True)
+        row3 = st.columns(2, gap="medium")
+        with row3[0]:
+            st.markdown(
+                "<div class='small-label'>Current purchasing — manufacturer split (latest season)</div>",
+                unsafe_allow_html=True,
+            )
+            purchasing_chart = (
+                alt.Chart(dummy["current_purchasing"])
+                .mark_arc(innerRadius=55, outerRadius=95, stroke="#FFFFFF", strokeWidth=2)
+                .encode(
+                    theta=alt.Theta("Share:Q", stack=True),
+                    color=alt.Color(
+                        "Manufacturer:N",
+                        scale=alt.Scale(
+                            domain=["Sanofi", "Sequirus", "Pfizer", "GSK"],
+                            range=["#7432A8", "#F37000", "#4285F4", "#36A39B"],
+                        ),
+                        legend=alt.Legend(orient="right", title=None),
+                    ),
+                    tooltip=["Manufacturer", alt.Tooltip("Share:Q", format=".0f", title="Share %")],
+                )
+                .properties(height=220)
+            )
+            st.altair_chart(purchasing_chart, use_container_width=True)
+            st.markdown(
+                "<div style='color: var(--text-secondary); font-size:.8rem; margin-top:-.2rem;'>"
+                "<strong>Sanofi-primary</strong> account &mdash; 62% of vaccine spend; Sequirus remains the main competitor."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+        with row3[1]:
+            st.markdown(
+                """
+                <div class='driver-card' style='min-height: 220px;'>
+                    <div class='driver-header'>
+                        <div class='driver-title'>Customer Relationship Level</div>
+                        <div class='driver-meta'>Engagement intensity (TTM)</div>
+                    </div>
+                    <div style='display:flex; align-items:center; gap:.9rem; margin: .35rem 0 .8rem 0;'>
+                        <span style='font-size:1.5rem; font-weight:820; color:#19766F; line-height:1;'>High</span>
+                        <span style='color: var(--text-secondary); font-size:.85rem; line-height:1.4;'>
+                            Strong cross-functional engagement across the last 12 months.
+                        </span>
+                    </div>
+                    <div style='display:grid; grid-template-columns: repeat(2, 1fr); gap:.6rem;'>
+                        <div style='background:#F8F7FC; border:1px solid #E5E2EF; border-radius:11px; padding:.65rem .8rem;'>
+                            <div style='font-size:.72rem; font-weight:800; color:#6B6878; text-transform:uppercase; letter-spacing:.03rem;'># of Calls</div>
+                            <div style='font-size:1.85rem; font-weight:820; color:#1F1F29; line-height:1.1; margin-top:.2rem;'>7</div>
+                            <div style='font-size:.75rem; color:#6B6878; margin-top:.15rem;'>TTM field calls</div>
+                        </div>
+                        <div style='background:#F8F7FC; border:1px solid #E5E2EF; border-radius:11px; padding:.65rem .8rem;'>
+                            <div style='font-size:.72rem; font-weight:800; color:#6B6878; text-transform:uppercase; letter-spacing:.03rem;'># of Stakeholders Engaged</div>
+                            <div style='font-size:1.85rem; font-weight:820; color:#1F1F29; line-height:1.1; margin-top:.2rem;'>12</div>
+                            <div style='font-size:.75rem; color:#6B6878; margin-top:.15rem;'>Across procurement, medical, exec</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # =================== Section 2: Offer Intelligence ===================
+    with st.container(border=True):
+        st.markdown("<div class='section-title'>Offer Intelligence — Current Contract</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='section-subtitle'>Active contract terms and prior-year performance.</div>",
+            unsafe_allow_html=True,
+        )
+        contract_id = str(selected_row.get("contract_name", "—"))
+        product = str(selected_row.get("brand_name", "—"))
+        net_price = float(selected_row.get("prior_net_price", 0) or 0)
+        rebate = float(selected_row.get("prior_rebate_pct", 0) or 0)
+        reimbursement = float(selected_row.get("reimbursement_rate_pct", 0) or 0)
+        volume_attain = float(selected_row.get("prior_year_attainment_pct", 0) or 0)
+        returnability = float(selected_row.get("prior_returnability_pct", 0) or 0)
+        contract_duration = "2 years"
+
+        top_html = (
+            "<div style='display:grid; grid-template-columns: repeat(3, 1fr); gap:.6rem; margin-top:.4rem;'>"
+            + _profile_card("Contract ID", contract_id)
+            + _profile_card("Products", product)
+            + _profile_card("Contract duration", contract_duration)
+            + "</div>"
+        )
+        st.markdown(top_html, unsafe_allow_html=True)
+
+        st.markdown(
+            "<div class='small-label' style='margin-top:.7rem;'>Current offer on the table</div>",
+            unsafe_allow_html=True,
+        )
+        lever_html = (
+            "<div style='display:grid; grid-template-columns: repeat(5, 1fr); gap:.6rem; margin-top:.3rem;'>"
+            + _profile_card("Net Price", f"${net_price:,.2f}")
+            + _profile_card("Rebate", f"{rebate:.1f}%")
+            + _profile_card("Reimbursement", f"{reimbursement:.1f}%")
+            + _profile_card("Volume attainment", f"{volume_attain:.1f}%")
+            + _profile_card("Returnability", f"{returnability:.1f}%")
+            + "</div>"
+        )
+        st.markdown(lever_html, unsafe_allow_html=True)
+
+        # Previous Offer block — only when negotiating in round 2 or later
+        current_round = int(selected_row.get("round_number", 1) or 1)
+        if current_round >= 2:
+            prev_round = current_round - 1
+            # Dummy prior-round terms: slightly worse than current
+            prev_net = net_price * 1.04
+            prev_rebate = max(rebate - 1.5, 0)
+            prev_reimburse = max(reimbursement - 3, 0)
+            prev_volume = max(volume_attain - 4, 0)
+            prev_returnability = max(returnability - 0.5, 0)
+
+            def _previous_card(label: str, value: str) -> str:
+                return (
+                    "<div style='background:#F3F1F8; border:1.5px dashed #B8AEDA; border-radius:11px;"
+                    " padding:.55rem .75rem; min-height:62px; display:flex; flex-direction:column;"
+                    " justify-content:center; opacity:.92;'>"
+                    f"<div class='lever-value-label' style='color:#7B6D9C;'>{escape(label)}</div>"
+                    f"<div style='font-weight:760; color:#3E3759; font-size:1rem; text-decoration: line-through;"
+                    f" text-decoration-color:#B8AEDA;'>{escape(value)}</div></div>"
+                )
+
+            st.markdown(
+                f"""
+                <div style='display:flex; align-items:center; gap:.6rem; margin-top:1rem;'>
+                    <span class='badge' style='background:#EFEAF8; color:#5A3E89; border-color:#D7CCEF;'>
+                        Previous Offer &middot; Round {prev_round}
+                    </span>
+                    <span style='color: var(--text-secondary); font-size:.82rem;'>
+                        Terms put forward in the prior round (not accepted)
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            prev_html = (
+                "<div style='display:grid; grid-template-columns: repeat(5, 1fr); gap:.6rem; margin-top:.35rem;'>"
+                + _previous_card("Net Price", f"${prev_net:,.2f}")
+                + _previous_card("Rebate", f"{prev_rebate:.1f}%")
+                + _previous_card("Reimbursement", f"{prev_reimburse:.1f}%")
+                + _previous_card("Volume attainment", f"{prev_volume:.1f}%")
+                + _previous_card("Returnability", f"{prev_returnability:.1f}%")
+                + "</div>"
+            )
+            st.markdown(prev_html, unsafe_allow_html=True)
+
+    # =================== Section 3: Negotiation Context ===================
+    with st.container(border=True):
+        st.markdown("<div class='section-title'>Negotiation Context</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='section-subtitle'>Market position, competitive intensity, and recent activity.</div>",
+            unsafe_allow_html=True,
+        )
+
+        wac_price = net_price * 1.15  # dummy: assume WAC ~15% above net
+        expected_reimbursement = reimbursement
+        round_num = int(selected_row.get("round_number", 1) or 1)
+
+        m = st.columns(3, gap="small")
+        with m[0]:
+            render_metric_card("WAC Price", f"${wac_price:,.2f}", "Wholesale Acquisition Cost", "metric-card-green")
+        with m[1]:
+            render_metric_card("Expected Reimbursement", f"{expected_reimbursement:.1f}%", "Projected reimbursement", "metric-card-blue")
+        with m[2]:
+            render_metric_card("Negotiation Round", f"Round {round_num}", "Active negotiation round", "metric-card-amber", compact_value=True)
+
+        st.markdown("<div style='height:.7rem;'></div>", unsafe_allow_html=True)
+
+        share_cols = st.columns(2, gap="medium")
+        with share_cols[0]:
+            st.markdown(
+                "<div class='small-label'>Brand share — this customer's portfolio</div>",
+                unsafe_allow_html=True,
+            )
+            donut = (
+                alt.Chart(dummy["brand_share"])
+                .mark_arc(innerRadius=55, outerRadius=100, stroke="#FFFFFF", strokeWidth=2)
+                .encode(
+                    theta=alt.Theta("Share:Q", stack=True),
+                    color=alt.Color(
+                        "Brand:N",
+                        scale=alt.Scale(range=palette),
+                        legend=alt.Legend(orient="right", title=None),
+                    ),
+                    tooltip=["Brand", alt.Tooltip("Share:Q", format=".0f", title="Share %")],
+                )
+                .properties(height=260)
+            )
+            st.altair_chart(donut, use_container_width=True)
+
+        with share_cols[1]:
+            st.markdown(
+                "<div class='small-label'>Segment share — vs peer accounts</div>",
+                unsafe_allow_html=True,
+            )
+            donut = (
+                alt.Chart(dummy["segment_share"])
+                .mark_arc(innerRadius=55, outerRadius=100, stroke="#FFFFFF", strokeWidth=2)
+                .encode(
+                    theta=alt.Theta("Share:Q", stack=True),
+                    color=alt.Color(
+                        "Account:N",
+                        scale=alt.Scale(range=palette),
+                        legend=alt.Legend(orient="right", title=None),
+                    ),
+                    tooltip=["Account", alt.Tooltip("Share:Q", format=".0f", title="Share %")],
+                )
+                .properties(height=260)
+            )
+            st.altair_chart(donut, use_container_width=True)
+
+        st.markdown("<div style='height:.7rem;'></div>", unsafe_allow_html=True)
+
+        intensity_cols = st.columns(2, gap="medium")
+        with intensity_cols[0]:
+            intensity = "High"
+            intensity_color = {"High": "#DC2626", "Medium": "#F37000", "Low": "#36A39B"}[intensity]
+            st.markdown(
+                f"""
+                <div class='driver-card' style='min-height: 200px;'>
+                    <div class='driver-header'>
+                        <div class='driver-title'>Competition Intensity</div>
+                        <div class='driver-meta'>Account-level signal</div>
+                    </div>
+                    <div style='font-size: 2.1rem; font-weight: 820; color: {intensity_color}; line-height: 1; margin: .35rem 0 .55rem 0;'>{intensity}</div>
+                    <ul class='driver-list'>
+                        <li><strong>3 active competitors</strong> currently engaged in this account.</li>
+                        <li>Aggressive pricing pressure flagged from <strong>Pfizer</strong> and <strong>GSK</strong> over the last two rounds.</li>
+                        <li>Customer has explicitly benchmarked against <strong>competitor rebate terms</strong>.</li>
+                        <li>Negotiation cycle running ~2 weeks shorter than segment average.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with intensity_cols[1]:
+            st.markdown(
+                """
+                <div class='driver-card' style='min-height: 200px;'>
+                    <div class='driver-header'>
+                        <div class='driver-title'>Recent Wins / Losses</div>
+                        <div class='driver-meta'>Last 4 quarters &nbsp;|&nbsp; 3 wins, 1 loss</div>
+                    </div>
+                    <ul class='driver-list'>
+                        <li><span class='positive-chip'>Won</span> <strong>Walmart Pharmacy</strong> — FluShield QIV, $2.1M annual</li>
+                        <li><span class='positive-chip'>Won</span> <strong>HEB</strong> — VaxiGuard RSV, $0.9M annual</li>
+                        <li><span class='negative-chip'>Lost</span> <strong>CVS Health</strong> — PneuProtect, displaced by competitor on rebate</li>
+                        <li><span class='positive-chip'>Won</span> <strong>Kroger</strong> — FluShield HD pilot, expansion expected</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
 def render_customer_deep_dive(selected_row: pd.Series) -> None:
     customer_name = escape(str(selected_row.get("customer_name", "—")))
     segment = escape(str(selected_row.get("customer_segment", "—")))
@@ -1255,7 +1701,6 @@ def main() -> None:
     st.session_state.setdefault("latest_result", None)
 
     selected_row, product_scope, selected_brands = choose_context(data)
-    render_customer_deep_dive(selected_row)
     context_signature = "|".join(
         [
             str(selected_row["customer_name"]),
@@ -1276,51 +1721,57 @@ def main() -> None:
     else:
         initialize_product_values(product_rows)
 
-    left, right = st.columns([0.35, 0.65], gap="large")
-    with left:
-        with st.container(border=True):
-            run_clicked, reset_clicked, save_clicked = render_pricing_levers(product_scope, selected_brands, product_rows)
+    tab_simulator, tab_deep_dive = st.tabs(["Pricing Simulator", "Customer Deep Dive"])
 
-    scenario_inputs_by_brand = {
-        brand: build_scenario_inputs(product_rows[brand], product_scope, selected_brands, brand)
-        for brand in selected_brands
-    }
-    watchouts = [
-        f"{brand}: {watchout}"
-        for brand, inputs in scenario_inputs_by_brand.items()
-        for watchout in collect_scenario_watchouts(inputs)
-    ]
+    with tab_simulator:
+        left, right = st.columns([0.35, 0.65], gap="large")
+        with left:
+            with st.container(border=True):
+                run_clicked, reset_clicked, save_clicked = render_pricing_levers(product_scope, selected_brands, product_rows)
 
-    if run_clicked:
-        st.session_state["latest_result"] = score_selected_products(
-            model,
-            feature_metadata,
-            product_scope,
-            selected_brands,
-            product_rows,
-        )
+        scenario_inputs_by_brand = {
+            brand: build_scenario_inputs(product_rows[brand], product_scope, selected_brands, brand)
+            for brand in selected_brands
+        }
+        watchouts = [
+            f"{brand}: {watchout}"
+            for brand, inputs in scenario_inputs_by_brand.items()
+            for watchout in collect_scenario_watchouts(inputs)
+        ]
 
-    if save_clicked:
-        if st.session_state.get("latest_result") is None:
-            st.toast("Run a simulation before saving a scenario.")
-        else:
-            save_scenario(
-                str(selected_row["customer_name"]),
-                str(selected_row["contract_name"]),
-                st.session_state["latest_result"]["inputs"],
-                st.session_state["latest_result"],
+        if run_clicked:
+            st.session_state["latest_result"] = score_selected_products(
+                model,
+                feature_metadata,
+                product_scope,
+                selected_brands,
+                product_rows,
             )
-            st.toast("Scenario saved.")
 
-    with left:
-        render_watchouts(watchouts)
+        if save_clicked:
+            if st.session_state.get("latest_result") is None:
+                st.toast("Run a simulation before saving a scenario.")
+            else:
+                save_scenario(
+                    str(selected_row["customer_name"]),
+                    str(selected_row["contract_name"]),
+                    st.session_state["latest_result"]["inputs"],
+                    st.session_state["latest_result"],
+                )
+                st.toast("Scenario saved.")
 
-    with right:
-        with st.container(border=True):
-            render_outcome(st.session_state.get("latest_result"))
+        with left:
+            render_watchouts(watchouts)
 
-    render_rationale(model_metadata, st.session_state.get("latest_result"))
-    render_saved_scenarios()
+        with right:
+            with st.container(border=True):
+                render_outcome(st.session_state.get("latest_result"))
+
+        render_rationale(model_metadata, st.session_state.get("latest_result"))
+        render_saved_scenarios()
+
+    with tab_deep_dive:
+        render_customer_deep_dive_screen(selected_row)
 
     st.caption("Synthetic PoC model for demonstration only. Do not use for real contracting decisions.")
 
