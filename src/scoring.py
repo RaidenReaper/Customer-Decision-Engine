@@ -149,11 +149,11 @@ def calculate_driver_influence(user_inputs: dict[str, Any]) -> dict[str, list[di
         )
     elif inputs["reimbursement_rate_pct"] < 60:
         drivers["commercial_offer"].append(
-            _driver("Reimbursement support", "Negative", -7, "Reimbursement rate is well below expected support levels.", "commercial_offer")
+            _driver("Reimbursement support", "Negative", -7, "Reimbursement rate falls materially below the level typically required for pull-through.", "commercial_offer")
         )
     elif inputs["reimbursement_rate_pct"] < 76:
         drivers["commercial_offer"].append(
-            _driver("Reimbursement support", "Negative", -4, "Lower reimbursement support may create customer pushback.", "commercial_offer")
+            _driver("Reimbursement support", "Negative", -4, "Reimbursement rate is below the level this customer has historically required.", "commercial_offer")
         )
 
     if inputs["volume_gap_vs_prior"] >= 5:
@@ -208,7 +208,7 @@ def calculate_driver_influence(user_inputs: dict[str, Any]) -> dict[str, list[di
 
     if inputs["competitor_rebate_estimate_pct"] > inputs["rebate_pct"] + 3:
         drivers["competitive_pressure"].append(
-            _driver("Competitor rebate", "Negative", -3, "Estimated competitor rebate is richer than the proposed rebate.", "competitive_pressure")
+            _driver("Competitor rebate", "Negative", -3, "The estimated competitor rebate exceeds the level offered in this proposal.", "competitive_pressure")
         )
 
     if inputs["returnability_pct"] < inputs["prior_returnability_pct"] - 2:
@@ -221,11 +221,11 @@ def calculate_driver_influence(user_inputs: dict[str, Any]) -> dict[str, list[di
         )
     if inputs["deal_attractiveness_score"] >= 68:
         drivers["deal_context"].append(
-            _driver("Deal attractiveness", "Positive", 5, "Overall economics are attractive relative to historical behavior.", "deal_context")
+            _driver("Deal attractiveness", "Positive", 5, "Overall economics compare favorably to this customer's historical acceptance range.", "deal_context")
         )
     elif inputs["deal_attractiveness_score"] < 45:
         drivers["deal_context"].append(
-            _driver("Deal attractiveness", "Negative", -5, "Overall economics are below the attractive range for this customer.", "deal_context")
+            _driver("Deal attractiveness", "Negative", -5, "Overall economics fall below the range this customer has historically accepted.", "deal_context")
         )
 
     if inputs["reimbursement_rate_pct"] < 60:

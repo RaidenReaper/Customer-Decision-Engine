@@ -67,16 +67,14 @@ def generate_dummy_data(rows: int = 500, seed: int = 42) -> pd.DataFrame:
     }
     customer_name = np.array([rng.choice(customer_names[segment]) for segment in customer_segment])
 
-    brands = ["FluShield QIV", "FluShield HD", "VaxiGuard RSV", "PneuProtect", "TravelVax"]
+    brands = ["Flublok", "Fluzone HD", "Fluzone SD"]
     product_families = {
-        "FluShield QIV": "Influenza",
-        "FluShield HD": "Influenza",
-        "VaxiGuard RSV": "Respiratory",
-        "PneuProtect": "Pneumococcal",
-        "TravelVax": "Travel Vaccine",
+        "Flublok": "Influenza",
+        "Fluzone HD": "Influenza",
+        "Fluzone SD": "Influenza",
     }
     product_ids = {brand: f"PRD-{idx + 1001}" for idx, brand in enumerate(brands)}
-    brand_name = _choice(rng, brands, rows, [0.30, 0.20, 0.20, 0.18, 0.12])
+    brand_name = _choice(rng, brands, rows, [0.35, 0.20, 0.45])
     product_name = brand_name
     product_family = np.array([product_families[item] for item in brand_name])
     product_id = np.array([product_ids[item] for item in brand_name])

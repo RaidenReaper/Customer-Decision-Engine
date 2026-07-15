@@ -6,54 +6,54 @@
   "disclaimer": "Synthetic PoC model for demonstration only. Not production-ready and not validated for real contracting decisions.",
   "training_sample_size": 500,
   "test_sample_size": 125,
-  "accuracy": 0.664,
+  "accuracy": 0.648,
   "classification_report": {
     "Accepted": {
-      "precision": 0.7413793103448276,
-      "recall": 0.7962962962962963,
-      "f1-score": 0.7678571428571429,
+      "precision": 0.7636363636363637,
+      "recall": 0.7777777777777778,
+      "f1-score": 0.7706422018348624,
       "support": 54.0
     },
     "Negotiated": {
-      "precision": 0.6296296296296297,
-      "recall": 0.6938775510204082,
-      "f1-score": 0.6601941747572816,
+      "precision": 0.5892857142857143,
+      "recall": 0.673469387755102,
+      "f1-score": 0.6285714285714286,
       "support": 49.0
     },
     "Rejected": {
-      "precision": 0.46153846153846156,
+      "precision": 0.42857142857142855,
       "recall": 0.2727272727272727,
-      "f1-score": 0.34285714285714286,
+      "f1-score": 0.3333333333333333,
       "support": 22.0
     },
-    "accuracy": 0.664,
+    "accuracy": 0.648,
     "macro avg": {
-      "precision": 0.6108491338376396,
-      "recall": 0.5876337066813256,
-      "f1-score": 0.5903028201571892,
+      "precision": 0.5938311688311689,
+      "recall": 0.5746581460867175,
+      "f1-score": 0.5775156545798747,
       "support": 125.0
     },
     "weighted avg": {
-      "precision": 0.6483214461145497,
-      "recall": 0.664,
-      "f1-score": 0.6508532593619973,
+      "precision": 0.6363194805194805,
+      "recall": 0.648,
+      "f1-score": 0.6379840978593272,
       "support": 125.0
     }
   },
   "confusion_matrix": [
     [
-      43,
-      9,
+      42,
+      10,
       2
     ],
     [
       10,
-      34,
-      5
+      33,
+      6
     ],
     [
-      5,
-      11,
+      3,
+      13,
       6
     ]
   ],
@@ -62,87 +62,87 @@
     "Negotiated": 1,
     "Rejected": 2
   },
-  "last_refreshed": "2026-05-29",
+  "last_refreshed": "2026-07-13",
   "top_features": [
     {
-      "feature": "categorical__customer_name_Sunrise Pharmacy Group",
-      "importance": 0.03547608479857445
-    },
-    {
       "feature": "numerical__deal_attractiveness_score",
-      "importance": 0.03184976801276207
-    },
-    {
-      "feature": "categorical__flu_season_2027-2028",
-      "importance": 0.025214146822690964
-    },
-    {
-      "feature": "categorical__customer_name_Neighborhood Care Pharmacy",
-      "importance": 0.021674109622836113
+      "importance": 0.03523678332567215
     },
     {
       "feature": "categorical__customer_name_Pinecrest Health Partners",
-      "importance": 0.02053283154964447
-    },
-    {
-      "feature": "categorical__customer_name_Pioneer Retail Health",
-      "importance": 0.01931554265320301
-    },
-    {
-      "feature": "categorical__customer_name_Frontier Rx Network",
-      "importance": 0.01913958415389061
-    },
-    {
-      "feature": "numerical__price_gap_vs_prior",
-      "importance": 0.01566120609641075
-    },
-    {
-      "feature": "numerical__reimbursement_gap",
-      "importance": 0.015207343734800816
-    },
-    {
-      "feature": "numerical__reimbursement_rate_pct",
-      "importance": 0.01469914335757494
-    },
-    {
-      "feature": "categorical__customer_name_VitaPoint Pharmacy",
-      "importance": 0.014683682471513748
-    },
-    {
-      "feature": "categorical__customer_name_Riverside Integrated Care",
-      "importance": 0.014554052613675594
-    },
-    {
-      "feature": "categorical__customer_name_PrairieCare Health",
-      "importance": 0.014023056253790855
-    },
-    {
-      "feature": "numerical__rebate_pct",
-      "importance": 0.01374821923673153
-    },
-    {
-      "feature": "categorical__product_scope_Multi Product",
-      "importance": 0.013609840534627438
+      "importance": 0.025312919169664383
     },
     {
       "feature": "categorical__customer_name_BlueLeaf Pharmacy",
-      "importance": 0.013459021225571632
+      "importance": 0.024940496310591698
     },
     {
-      "feature": "categorical__product_priority_Growth",
-      "importance": 0.01231077779084444
+      "feature": "numerical__reimbursement_gap",
+      "importance": 0.02004317194223404
+    },
+    {
+      "feature": "categorical__customer_name_MountainView Health",
+      "importance": 0.019929274916648865
+    },
+    {
+      "feature": "categorical__product_scope_Single Product",
+      "importance": 0.019056761637330055
+    },
+    {
+      "feature": "numerical__price_gap_vs_prior",
+      "importance": 0.017499690875411034
     },
     {
       "feature": "categorical__customer_name_NorthStar Health",
-      "importance": 0.012154534459114075
+      "importance": 0.01615200564265251
+    },
+    {
+      "feature": "categorical__customer_name_PrairieCare Health",
+      "importance": 0.01565227098762989
+    },
+    {
+      "feature": "numerical__reimbursement_rate_pct",
+      "importance": 0.015429625287652016
+    },
+    {
+      "feature": "categorical__customer_name_Frontier Rx Network",
+      "importance": 0.01514494325965643
+    },
+    {
+      "feature": "numerical__rebate_pct",
+      "importance": 0.014991345815360546
     },
     {
       "feature": "categorical__product_priority_Selective",
-      "importance": 0.011507709510624409
+      "importance": 0.014147312380373478
+    },
+    {
+      "feature": "categorical__customer_name_Redwood Health Alliance",
+      "importance": 0.014098599553108215
+    },
+    {
+      "feature": "categorical__customer_name_VitaPoint Pharmacy",
+      "importance": 0.01374597754329443
+    },
+    {
+      "feature": "categorical__product_priority_Core",
+      "importance": 0.013018844649195671
     },
     {
       "feature": "numerical__competitive_pressure_score",
-      "importance": 0.011329606175422668
+      "importance": 0.012952965684235096
+    },
+    {
+      "feature": "categorical__contract_name_Retail 2027-2028 Vaccine Agreement",
+      "importance": 0.012813149951398373
+    },
+    {
+      "feature": "categorical__customer_name_HarborPoint Health System",
+      "importance": 0.012770012021064758
+    },
+    {
+      "feature": "categorical__product_scope_Multi Product",
+      "importance": 0.012723633088171482
     }
   ]
 }

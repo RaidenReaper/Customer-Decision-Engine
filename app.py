@@ -12,6 +12,12 @@ import pandas as pd
 import streamlit as st
 
 try:
+    import shap  # noqa: F401
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+
+try:
     from src.scoring import score_customer_response as external_score_customer_response
 except ImportError:
     external_score_customer_response = None
@@ -28,11 +34,9 @@ from src.utils import (
 
 
 BRAND_FAMILY = {
-    "FluShield QIV": "Influenza",
-    "FluShield HD": "Influenza",
-    "VaxiGuard RSV": "Respiratory",
-    "PneuProtect": "Pneumococcal",
-    "TravelVax": "Travel Vaccine",
+    "Flublok": "Influenza",
+    "Fluzone HD": "Influenza",
+    "Fluzone SD": "Influenza",
 }
 
 DRIVER_CATEGORIES = {
@@ -122,7 +126,7 @@ def local_calculate_driver_influence(user_inputs: dict[str, Any]) -> dict[str, l
         )
     elif inputs["reimbursement_rate_pct"] < 60:
         drivers["commercial_offer"].append(
-            local_driver("Reimbursement support", "Negative", -7, "Reimbursement rate is well below expected support levels.", "commercial_offer")
+            local_driver("Reimbursement support", "Negative", -7, "Reimbursement rate falls materially below the level typically required for pull-through.", "commercial_offer")
         )
         drivers["watchouts"].append(
             local_driver("Low reimbursement", "Watchout", 0, "Reimbursement below 60% may create customer pushback.", "commercial_offer")
@@ -194,7 +198,7 @@ def local_calculate_driver_influence(user_inputs: dict[str, Any]) -> dict[str, l
         )
     elif inputs["deal_attractiveness_score"] < 45:
         drivers["deal_context"].append(
-            local_driver("Deal attractiveness", "Negative", -5, "Overall economics are below the attractive range for this customer.", "deal_context")
+            local_driver("Deal attractiveness", "Negative", -5, "Overall economics fall below the range this customer has historically accepted.", "deal_context")
         )
 
     defaults = {
@@ -313,17 +317,6 @@ LEVER_CONFIGS = [
         "max_value": 25.0,
         "step": 0.1,
         "format": "%.1f",
-    },
-    {
-        "label": "WAC Price",
-        "key": "reimbursement_rate_pct",
-        "current_column": "prior_net_price",
-        "value_type": "currency",
-        "helper": "$/dose (Wholesale Acquisition Cost)",
-        "min_value": 0.0,
-        "max_value": 300.0,
-        "step": 0.1,
-        "format": "%.2f",
     },
     {
         "label": "Volume Commitment",
@@ -515,6 +508,50 @@ def inject_css() -> None:
             margin-bottom: .28rem;
         }
         .lever-input-wrap {padding-top: .05rem;}
+
+        .lever-table-header {
+            display: flex; padding: .3rem .1rem; margin-bottom: .2rem;
+            border-bottom: 2px solid var(--border);
+        }
+        .lever-table-header-cell {
+            font-size: .78rem; font-weight: 800; color: var(--text-primary);
+            text-transform: none;
+        }
+        div[class*="st-key-lever-row-even-"] {
+            background: #FAF9FC; border-radius: 12px; padding: .45rem .5rem .3rem .5rem; margin-bottom: .25rem;
+        }
+        div[class*="st-key-lever-row-odd-"] {
+            background: #FFFFFF; border-radius: 12px; padding: .45rem .5rem .3rem .5rem; margin-bottom: .25rem;
+        }
+        .lever-table-metric {
+            font-size: .9rem; font-weight: 800; color: var(--text-primary);
+            padding-top: .5rem;
+        }
+        .lever-table-season-label {
+            font-size: .74rem; font-weight: 700; color: var(--text-secondary);
+            padding-top: .55rem;
+        }
+        .lever-table-season-label--prev { font-style: italic; font-weight: 600; color: #9C97A8; }
+        .lever-table-prev-value {
+            font-size: .88rem; font-style: italic; color: #8D879C;
+            padding-top: .5rem;
+        }
+
+        /* Keep the Pricing Levers panel pinned in view while the Outcome column scrolls.
+           Streamlit wraps keyed containers in an internal stLayoutWrapper div that only
+           sizes to its child's natural height, leaving no room for sticky to travel within
+           the taller (stretched) column — force that wrapper to fill the column's height. */
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-lever-sticky-panel"]) {
+            height: 100% !important;
+        }
+        /* The panel itself inherits Streamlit's default flex: 1 1 0% (stretch-to-fill),
+           which overrides height/auto. Pin it back to its natural content size so there's
+           slack in the (now taller) wrapper above for the sticky offset to travel within. */
+        div[class*="st-key-lever-sticky-panel"] {
+            position: sticky;
+            top: 1rem;
+            flex: 0 0 auto !important;
+        }
 
         /* Force Streamlit/BaseWeb controls onto the light product theme. */
         label, [data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] p {
@@ -746,42 +783,6 @@ def render_metric_card(label: str, value: str, help_text: str, css_class: str, c
     )
 
 
-def render_current_card(value: str, helper: str) -> None:
-    st.markdown(
-        f"<div class='current-card'>{escape(value)}</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def render_lever(
-    label: str,
-    state_key: str,
-    current_value: float | int,
-    value_type: str,
-    helper: str,
-    min_value: float | int,
-    max_value: float | int,
-    step: float | int,
-    format_string: str | None = None,
-) -> None:
-    st.markdown(f"<div class='lever-name'>{escape(label)}</div>", unsafe_allow_html=True)
-    left, right = st.columns([0.5, 0.5], gap="small")
-    with left:
-        st.markdown("<div class='lever-value-label'>Current</div>", unsafe_allow_html=True)
-        render_current_card(format_value(current_value, value_type), helper)
-    with right:
-        st.markdown("<div class='lever-value-label'>Proposed</div>", unsafe_allow_html=True)
-        st.number_input(
-            f"Proposed {label}",
-            min_value=min_value,
-            max_value=max_value,
-            step=step,
-            format=format_string,
-            key=state_key,
-            label_visibility="collapsed",
-        )
-
-
 def build_scenario_inputs(row: pd.Series, selected_scope: str, selected_brands: list[str], brand: str) -> dict[str, Any]:
     inputs = row.to_dict()
     primary_brand = brand
@@ -948,19 +949,186 @@ def score_selected_products(
     if len(product_results) == 1:
         result = product_results[0]
         result["product_results"] = product_results
-        return result
+    else:
+        first_inputs = next(iter(scenario_inputs_by_brand.values()))
+        portfolio_inputs = {
+            **first_inputs,
+            "brand_name": "Portfolio",
+            "product_name": "Portfolio",
+            "brand_scope": ", ".join(selected_brands),
+            "net_price": round(sum(inputs["net_price"] for inputs in scenario_inputs_by_brand.values()) / len(scenario_inputs_by_brand), 2),
+            "rebate_pct": round(sum(inputs["rebate_pct"] for inputs in scenario_inputs_by_brand.values()) / len(scenario_inputs_by_brand), 2),
+            "volume_commitment": sum(int(inputs["volume_commitment"]) for inputs in scenario_inputs_by_brand.values()),
+        }
+        result = aggregate_product_results(product_results, portfolio_inputs)
 
-    first_inputs = next(iter(scenario_inputs_by_brand.values()))
-    portfolio_inputs = {
-        **first_inputs,
-        "brand_name": "Portfolio",
-        "product_name": "Portfolio",
-        "brand_scope": ", ".join(selected_brands),
-        "net_price": round(sum(inputs["net_price"] for inputs in scenario_inputs_by_brand.values()) / len(scenario_inputs_by_brand), 2),
-        "rebate_pct": round(sum(inputs["rebate_pct"] for inputs in scenario_inputs_by_brand.values()) / len(scenario_inputs_by_brand), 2),
-        "volume_commitment": sum(int(inputs["volume_commitment"]) for inputs in scenario_inputs_by_brand.values()),
-    }
-    return aggregate_product_results(product_results, portfolio_inputs)
+    result["confidence_factors"] = compute_confidence_factors(
+        model,
+        result.get("inputs", {}),
+        result["probabilities"],
+        feature_metadata,
+    )
+    result["overall_confidence_band"] = compute_overall_confidence_band(result["confidence_factors"])
+    result["shap_contributions"] = compute_shap_contributions(model, result.get("inputs", {}), feature_metadata)
+    return result
+
+
+FEATURE_LABEL_MAP: dict[str, str] = {
+    "net_price": "Net Price",
+    "rebate_pct": "Rebate %",
+    "multi_year_discount_pct": "Multi-year Discount %",
+    "cancellation_pct": "Cancellation %",
+    "reimbursement_rate_pct": "Reimbursement Rate %",
+    "volume_commitment": "Volume Commitment",
+    "market_share_commitment_pct": "Market Share Commitment %",
+    "returnability_pct": "Returnability %",
+    "prior_net_price": "Prior Net Price",
+    "prior_rebate_pct": "Prior Rebate %",
+    "prior_volume": "Prior Volume",
+    "prior_year_market_share": "Prior-year Market Share",
+    "prior_year_attainment_pct": "Prior-year Attainment %",
+    "prior_returnability_pct": "Prior Returnability %",
+    "prior_cancellation_pct": "Prior Cancellation %",
+    "historical_win_rate": "Historical Win Rate",
+    "competitive_pressure_score": "Competitive Pressure",
+    "competitor_rebate_estimate_pct": "Competitor Rebate Estimate",
+    "deal_attractiveness_score": "Deal Attractiveness Score",
+    "revenue": "Revenue",
+    "margin_proxy": "Margin Proxy",
+    "rebate_dollars": "Rebate $",
+    "price_gap_vs_prior": "Price Gap vs Prior",
+    "volume_gap_vs_prior": "Volume Gap vs Prior",
+    "market_share_gap_vs_prior": "Market Share Gap vs Prior",
+    "reimbursement_gap": "Reimbursement Gap",
+    "brand_name": "Brand",
+    "customer_name": "Customer",
+    "customer_segment": "Segment",
+    "customer_tier": "Tier",
+    "region": "Region",
+    "product_family": "Product Family",
+    "product_scope": "Product Scope",
+    "season_id": "Season",
+    "round_number": "Round",
+    "brand_scope": "Brand Scope",
+    "new_vs_existing_customer": "New vs Existing",
+    "prior_contract_status": "Prior Contract Status",
+    "prior_acceptance_flag": "Prior Acceptance",
+    "strategic_account_flag": "Strategic Account",
+}
+
+
+def _prettify_shap_feature(raw: str) -> str:
+    """Convert a sklearn ColumnTransformer feature name into a business label."""
+    name = raw
+    if name.startswith("numerical__"):
+        column = name[len("numerical__"):]
+        return FEATURE_LABEL_MAP.get(column, column.replace("_", " ").title())
+    if name.startswith("categorical__"):
+        rest = name[len("categorical__"):]
+        for column in sorted(FEATURE_LABEL_MAP.keys(), key=len, reverse=True):
+            prefix = f"{column}_"
+            if rest.startswith(prefix):
+                value = rest[len(prefix):]
+                return f"{FEATURE_LABEL_MAP[column]} = {value}"
+        underscore = rest.rfind("_")
+        if underscore > 0:
+            column = rest[:underscore]
+            value = rest[underscore + 1:]
+            column_label = FEATURE_LABEL_MAP.get(column, column.replace("_", " ").title())
+            return f"{column_label} = {value}"
+        return rest
+    return name
+
+
+def compute_shap_contributions(
+    model,
+    user_inputs: dict[str, Any],
+    feature_metadata: dict[str, Any],
+    top_n: int = 10,
+) -> pd.DataFrame | None:
+    """Return top-N SHAP contributions for the Accepted class as a DataFrame."""
+    if not SHAP_AVAILABLE:
+        return None
+    try:
+        import shap
+    except ImportError:
+        return None
+    try:
+        feature_columns = feature_metadata["feature_columns"]
+        row = {**user_inputs, **calculate_derived_fields(user_inputs)}
+        input_df = pd.DataFrame([{c: row[c] for c in feature_columns}])
+        preprocessor = model.named_steps["preprocessor"]
+        classifier = model.named_steps["classifier"]
+        input_transformed = preprocessor.transform(input_df)
+        feature_names = preprocessor.get_feature_names_out()
+        explainer = shap.TreeExplainer(classifier)
+        shap_out = explainer(input_transformed)
+        accept_shap = shap_out.values[0, :, OUTCOME_LABELS.index("Accepted")]
+    except Exception:
+        return None
+
+    contributions = pd.DataFrame(
+        {
+            "feature": [_prettify_shap_feature(name) for name in feature_names],
+            "shap": accept_shap.astype(float),
+        }
+    )
+    contributions["abs_shap"] = contributions["shap"].abs()
+    # Aggregate duplicate labels (in case categorical grouping collides)
+    contributions = (
+        contributions.groupby("feature", as_index=False)
+        .agg(shap=("shap", "sum"), abs_shap=("abs_shap", "sum"))
+        .sort_values("abs_shap", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+    contributions["direction"] = contributions["shap"].apply(lambda v: "Supports Accept" if v >= 0 else "Pushes toward Reject")
+    return contributions
+
+
+def render_shap_chart(contributions: pd.DataFrame | None) -> None:
+    if contributions is None or contributions.empty:
+        st.info("SHAP contributions are not available for this scenario.")
+        return
+    st.markdown(
+        "<div class='small-label' style='margin-top:.8rem;'>Model feature contributions (SHAP) — impact on the Accepted probability</div>",
+        unsafe_allow_html=True,
+    )
+    chart = (
+        alt.Chart(contributions)
+        .mark_bar(cornerRadiusEnd=4, stroke="#FFFFFF", strokeWidth=1)
+        .encode(
+            x=alt.X("shap:Q", title="SHAP value (log-odds contribution to Accepted)", axis=alt.Axis(format=".2f")),
+            y=alt.Y(
+                "feature:N",
+                title=None,
+                sort=alt.EncodingSortField(field="abs_shap", op="max", order="descending"),
+            ),
+            color=alt.Color(
+                "direction:N",
+                scale=alt.Scale(
+                    domain=["Supports Accept", "Pushes toward Reject"],
+                    range=["#19766F", "#DC2626"],
+                ),
+                legend=alt.Legend(orient="top", title=None),
+            ),
+            tooltip=[
+                alt.Tooltip("feature:N", title="Feature"),
+                alt.Tooltip("shap:Q", format="+.3f", title="SHAP value"),
+                alt.Tooltip("direction:N", title="Direction"),
+            ],
+        )
+        .properties(height=max(220, 28 * len(contributions)))
+    )
+    st.altair_chart(chart, use_container_width=True)
+    st.markdown(
+        "<div style='color:var(--text-secondary); font-size:.78rem; margin-top:.2rem;'>"
+        "SHAP values are log-odds contributions from the trained XGBoost model. "
+        "Positive values push the prediction toward <strong>Accepted</strong>; negative values push toward <strong>Rejected</strong>. "
+        "Bar length is proportional to the strength of the contribution."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_driver_section(drivers: dict[str, list[dict[str, Any]]]) -> None:
@@ -1023,12 +1191,12 @@ def _deep_dive_dummy_data() -> dict[str, pd.DataFrame]:
     customer is picked in the Scenario Context filters (per spec).
     """
     seasons = ["2022-23", "2023-24", "2024-25", "2025-26"]
-    products = ["FluShield QIV", "VaxiGuard RSV", "PneuProtect"]
-    base_doses = {"FluShield QIV": 95, "VaxiGuard RSV": 42, "PneuProtect": 28}
+    products = ["Flublok", "Fluzone HD", "Fluzone SD"]
+    base_doses = {"Flublok": 95, "Fluzone HD": 42, "Fluzone SD": 28}
     attainment = {
-        "FluShield QIV": [82, 88, 94, 91],
-        "VaxiGuard RSV": [76, 84, 92, 96],
-        "PneuProtect": [71, 78, 83, 80],
+        "Flublok":    [82, 88, 94, 91],
+        "Fluzone HD": [76, 84, 92, 96],
+        "Fluzone SD": [71, 78, 83, 80],
     }
     sales_rows = []
     for product in products:
@@ -1067,11 +1235,9 @@ def _deep_dive_dummy_data() -> dict[str, pd.DataFrame]:
 
     brand_share = pd.DataFrame(
         [
-            {"Brand": "FluShield QIV", "Share": 42},
-            {"Brand": "VaxiGuard RSV", "Share": 24},
-            {"Brand": "PneuProtect", "Share": 18},
-            {"Brand": "FluShield HD", "Share": 10},
-            {"Brand": "TravelVax", "Share": 6},
+            {"Brand": "Flublok",    "Share": 46},
+            {"Brand": "Fluzone SD", "Share": 34},
+            {"Brand": "Fluzone HD", "Share": 20},
         ]
     )
 
@@ -1450,10 +1616,10 @@ def render_customer_deep_dive_screen(selected_row: pd.Series) -> None:
                         <div class='driver-meta'>Last 4 quarters &nbsp;|&nbsp; 3 wins, 1 loss</div>
                     </div>
                     <ul class='driver-list'>
-                        <li><span class='positive-chip'>Won</span> <strong>Walmart Pharmacy</strong> — FluShield QIV, $2.1M annual</li>
-                        <li><span class='positive-chip'>Won</span> <strong>HEB</strong> — VaxiGuard RSV, $0.9M annual</li>
-                        <li><span class='negative-chip'>Lost</span> <strong>CVS Health</strong> — PneuProtect, displaced by competitor on rebate</li>
-                        <li><span class='positive-chip'>Won</span> <strong>Kroger</strong> — FluShield HD pilot, expansion expected</li>
+                        <li><span class='positive-chip'>Won</span> <strong>Walmart Pharmacy</strong> — Flublok, $2.1M annual</li>
+                        <li><span class='positive-chip'>Won</span> <strong>HEB</strong> — Fluzone HD, $0.9M annual</li>
+                        <li><span class='negative-chip'>Lost</span> <strong>CVS Health</strong> — Fluzone SD, displaced by competitor on rebate</li>
+                        <li><span class='positive-chip'>Won</span> <strong>Kroger</strong> — Fluzone HD pilot, expansion expected</li>
                     </ul>
                 </div>
                 """,
@@ -1499,33 +1665,38 @@ def render_customer_deep_dive(selected_row: pd.Series) -> None:
 def choose_context(data: pd.DataFrame) -> tuple[pd.Series, str, list[str]]:
     with st.container(border=True):
         st.markdown("<div class='section-title'>Scenario Context</div>", unsafe_allow_html=True)
-        st.markdown("<div class='section-subtitle'>Select the customer, contract, product scope, season, and negotiation round.</div>", unsafe_allow_html=True)
-        top = st.columns([1, 1.15, 1.5, .9], gap="small")
+        st.markdown("<div class='section-subtitle'>Select the customer, negotiation round, and brand(s) to simulate.</div>", unsafe_allow_html=True)
+        top = st.columns([1, 1.3, .8, 1.6], gap="small")
         segment = safe_selectbox(top[0], "Customer Segment", sorted(data["customer_segment"].unique()), "filter_customer_segment")
         segment_data = data[data["customer_segment"] == segment]
         customer = safe_selectbox(top[1], "Customer", sorted(segment_data["customer_name"].unique()), "filter_customer")
         customer_data = segment_data[segment_data["customer_name"] == customer]
-        contract = safe_selectbox(top[2], "Contract Name", sorted(customer_data["contract_name"].unique()), "filter_contract")
-        contract_data = customer_data[customer_data["contract_name"] == contract]
-        season = safe_selectbox(top[3], "Season", sorted(contract_data["season_id"].unique()), "filter_season")
 
-        bottom = st.columns([1, 1.15, 1.5], gap="small")
-        season_data = contract_data[contract_data["season_id"] == season]
-        round_options = sorted(season_data["round_number"].unique())
-        round_number = safe_selectbox(bottom[0], "Round Number", round_options, "filter_round_number")
-        round_data = season_data[season_data["round_number"] == round_number]
-        product_scope = safe_selectbox(bottom[1], "Product Scope", ["Single Product", "Multi Product"], "filter_product_scope")
-        available_brands = sorted(contract_data["brand_name"].dropna().unique())
+        # Contract and Season are no longer user-selectable — auto-resolve to the
+        # customer's most recent (upcoming) season and its associated contract.
+        latest_season = sorted(customer_data["season_id"].unique())[-1]
+        season_data = customer_data[customer_data["season_id"] == latest_season]
+        latest_contract = sorted(season_data["contract_name"].unique())[0]
+        contract_data = season_data[season_data["contract_name"] == latest_contract]
+
+        round_options = sorted(contract_data["round_number"].unique())
+        round_number = safe_selectbox(top[2], "Round Number", round_options, "filter_round_number")
+        round_data = contract_data[contract_data["round_number"] == round_number]
+
+        # Brand options are scoped to the customer's full brand history (not just
+        # the latest contract or round), so the dropdown always offers a useful
+        # set of choices instead of "No results" once one or two are selected.
+        available_brands = sorted(customer_data["brand_name"].dropna().unique())
         if not available_brands:
-            available_brands = sorted(customer_data["brand_name"].dropna().unique())
+            available_brands = sorted(contract_data["brand_name"].dropna().unique())
         if not available_brands:
             available_brands = sorted(data["brand_name"].dropna().unique())
-        if product_scope == "Single Product":
-            selected_brand = safe_selectbox(bottom[2], "Brand / Brands", available_brands, "filter_single_brand")
-            selected_brands = [selected_brand]
-        else:
-            default_brands = available_brands[: min(2, len(available_brands))]
-            selected_brands = safe_multiselect(bottom[2], "Brand / Brands", available_brands, default_brands, "filter_multi_brands")
+        default_brands = available_brands[: min(1, len(available_brands))]
+        selected_brands = safe_multiselect(top[3], "Brand / Brands", available_brands, default_brands, "filter_multi_brands")
+        if not selected_brands:
+            selected_brands = available_brands[:1]
+
+        product_scope = "Single Product" if len(selected_brands) <= 1 else "Multi Product"
 
     selected_row = round_data.iloc[0] if not round_data.empty else contract_data.iloc[0]
     return selected_row, product_scope, selected_brands
@@ -1555,39 +1726,71 @@ def get_product_rows(data: pd.DataFrame, selected_row: pd.Series, selected_brand
     return product_rows
 
 
-def render_product_levers(row: pd.Series, brand: str) -> None:
-    st.markdown(f"<div class='small-label'>Proposed terms for {escape(brand)}</div>", unsafe_allow_html=True)
-    for config in LEVER_CONFIGS:
-        current_value = default_for_lever(row, config)
-        render_lever(
-            config["label"],
-            lever_state_key(brand, config["key"]),
-            current_value,
-            config["value_type"],
-            config["helper"],
-            config["min_value"],
-            config["max_value"],
-            config["step"],
-            config["format"],
-        )
+def _lever_table_column_widths(num_brands: int) -> list[float]:
+    return [1.25, 1.05] + [1.0] * num_brands
+
+
+def render_lever_table_header(selected_brands: list[str]) -> None:
+    cols = st.columns(_lever_table_column_widths(len(selected_brands)), gap="small")
+    labels = ["Metric", "Season"] + list(selected_brands)
+    for col, label in zip(cols, labels):
+        with col:
+            st.markdown(f"<div class='lever-table-header-cell'>{escape(label)}</div>", unsafe_allow_html=True)
+    st.markdown("<div class='lever-table-header'></div>", unsafe_allow_html=True)
+
+
+def render_lever_table_row(
+    config: dict[str, Any],
+    selected_brands: list[str],
+    product_rows: dict[str, pd.Series],
+    row_index: int,
+) -> None:
+    parity = "even" if row_index % 2 == 0 else "odd"
+    row_container = st.container(key=f"lever-row-{parity}-{config['key']}")
+    with row_container:
+        col_widths = _lever_table_column_widths(len(selected_brands))
+
+        # Upcoming Season row — editable, mirrors the current "Proposed" behavior.
+        row1 = st.columns(col_widths, gap="small")
+        with row1[0]:
+            st.markdown(f"<div class='lever-table-metric'>{escape(config['label'])}</div>", unsafe_allow_html=True)
+        with row1[1]:
+            st.markdown("<div class='lever-table-season-label'>Upcoming Season</div>", unsafe_allow_html=True)
+        for col, brand in zip(row1[2:], selected_brands):
+            with col:
+                st.number_input(
+                    f"{brand} {config['label']} upcoming season",
+                    min_value=config["min_value"],
+                    max_value=config["max_value"],
+                    step=config["step"],
+                    format=config["format"],
+                    key=lever_state_key(brand, config["key"]),
+                    label_visibility="collapsed",
+                )
+
+        # Previous Season row — read-only, mirrors the current "Current" value.
+        row2 = st.columns(col_widths, gap="small")
+        with row2[1]:
+            st.markdown("<div class='lever-table-season-label lever-table-season-label--prev'>Previous Season</div>", unsafe_allow_html=True)
+        for col, brand in zip(row2[2:], selected_brands):
+            with col:
+                previous_value = default_for_lever(product_rows[brand], config)
+                st.markdown(
+                    f"<div class='lever-table-prev-value'>{escape(format_value(previous_value, config['value_type']))}</div>",
+                    unsafe_allow_html=True,
+                )
 
 
 def render_pricing_levers(product_scope: str, selected_brands: list[str], product_rows: dict[str, pd.Series]) -> tuple[bool, bool, bool]:
     st.markdown("<div class='section-title'>Pricing Levers</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='section-subtitle'>Compare current contract terms with proposed scenario values.</div>",
+        "<div class='section-subtitle'>Compare previous-season terms with the upcoming-season proposal, by brand.</div>",
         unsafe_allow_html=True,
     )
 
-    if product_scope == "Multi Product" and len(selected_brands) > 1:
-        st.caption("Each selected product has its own proposed values. The simulation scores products separately and aggregates the portfolio view.")
-        tabs = st.tabs(selected_brands)
-        for tab, brand in zip(tabs, selected_brands):
-            with tab:
-                render_product_levers(product_rows[brand], brand)
-    else:
-        brand = selected_brands[0]
-        render_product_levers(product_rows[brand], brand)
+    render_lever_table_header(selected_brands)
+    for row_index, config in enumerate(LEVER_CONFIGS):
+        render_lever_table_row(config, selected_brands, product_rows, row_index)
 
     buttons = st.columns([1.2, 1, 1], gap="small")
     run_clicked = buttons[0].button("Run Simulation", type="primary", width="stretch")
@@ -1596,43 +1799,303 @@ def render_pricing_levers(product_scope: str, selected_brands: list[str], produc
     return run_clicked, reset_clicked, save_clicked
 
 
+def _decisiveness_factor(p_accept: float, p_reject: float) -> tuple[str, str]:
+    gap_pp = abs(p_accept - p_reject) * 100
+    accept_pct = f"{p_accept * 100:.0f}%"
+    reject_pct = f"{p_reject * 100:.0f}%"
+    if gap_pp >= 40:
+        return "High", f"Accept {accept_pct}, Reject {reject_pct} — clear separation between the two outcomes."
+    if gap_pp >= 15:
+        return "Medium", f"Accept {accept_pct}, Reject {reject_pct} — moderate separation between outcomes."
+    return "Low", f"Accept {accept_pct}, Reject {reject_pct} — outcomes clustered, no clear winner."
+
+
+def _historical_similarity_factor(user_inputs: dict[str, Any]) -> tuple[str, str]:
+    match = stable_match_score(user_inputs)
+    is_existing = str(user_inputs.get("new_vs_existing_customer", "Existing")).strip().lower() == "existing"
+    if match >= 85 and is_existing:
+        return "High", "Existing customer with similar Fluzone price range, volume commitment, and prior attainment seen across many prior deals."
+    if match >= 78:
+        return "Medium", f"Similar deals found in training data ({match}% match), but with some scenario differences."
+    return "Low", "New customer type or unusual offer structure (e.g., very high volume ask with no comparable historical deals)."
+
+
+def _feature_reliability_factor(user_inputs: dict[str, Any]) -> tuple[str, str]:
+    key_features = [
+        "net_price",
+        "rebate_pct",
+        "volume_commitment",
+        "market_share_commitment_pct",
+        "reimbursement_rate_pct",
+        "prior_year_attainment_pct",
+        "competitive_pressure_score",
+    ]
+    missing = []
+    for key in key_features:
+        value = user_inputs.get(key)
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            missing.append(key)
+    if not missing:
+        return "High", "Net price, volume commitment, prior-year volume, market share, and customer segment are all available from source systems."
+    if len(missing) <= 1:
+        return "Medium", f"Most inputs are available; {len(missing)} field is being estimated."
+    return "Low", "Key inputs such as prior-year volume, share, or competitive pressure are missing or estimated."
+
+
+def _prediction_consistency_factor(
+    model,
+    user_inputs: dict[str, Any],
+    feature_metadata: dict[str, Any],
+) -> tuple[str, str, dict[str, float]]:
+    key_num_features = ["net_price", "rebate_pct", "volume_commitment", "reimbursement_rate_pct", "market_share_commitment_pct"]
+    accept_pcts: list[float] = []
+    deltas = [-0.06, -0.03, 0.0, 0.03, 0.06]
+    feature_columns = feature_metadata["feature_columns"]
+    for delta in deltas:
+        perturbed = {**user_inputs}
+        for key in key_num_features:
+            value = perturbed.get(key)
+            if isinstance(value, (int, float)) and not pd.isna(value):
+                perturbed[key] = value * (1 + delta)
+        row = {**perturbed, **calculate_derived_fields(perturbed)}
+        try:
+            input_df = pd.DataFrame([{c: row[c] for c in feature_columns}])
+            proba = model.predict_proba(input_df)[0]
+            accept_pcts.append(float(proba[OUTCOME_LABELS.index("Accepted")]) * 100)
+        except Exception:
+            continue
+    if not accept_pcts:
+        return "Medium", "Perturbation test could not be run — treating as moderate consistency.", {}
+    lo, hi = min(accept_pcts), max(accept_pcts)
+    spread = hi - lo
+    detail = {"lo": lo, "hi": hi, "spread": spread}
+    band_text = f"Across five validation runs, Accept ranges {lo:.0f}%–{hi:.0f}%"
+    if spread <= 6:
+        return "High", f"{band_text} (narrow spread — the model is stable to small input changes).", detail
+    if spread <= 20:
+        return "Medium", f"{band_text} (moderate spread — some sensitivity to input changes).", detail
+    return "Low", f"{band_text} (wide spread — prediction is sensitive to small input changes).", detail
+
+
+def compute_confidence_factors(
+    model,
+    user_inputs: dict[str, Any],
+    probabilities: dict[str, float],
+    feature_metadata: dict[str, Any],
+) -> dict[str, dict[str, str]]:
+    p_accept = probabilities["Accepted"]
+    p_reject = probabilities["Negotiated"] + probabilities["Rejected"]
+    d_band, d_desc = _decisiveness_factor(p_accept, p_reject)
+    h_band, h_desc = _historical_similarity_factor(user_inputs)
+    f_band, f_desc = _feature_reliability_factor(user_inputs)
+    c_band, c_desc, c_detail = _prediction_consistency_factor(model, user_inputs, feature_metadata)
+    return {
+        "decisiveness":  {"label": "Prediction Decisiveness",  "band": d_band, "description": d_desc},
+        "historical":    {"label": "Historical Similarity",    "band": h_band, "description": h_desc},
+        "reliability":   {"label": "Feature Reliability",      "band": f_band, "description": f_desc},
+        "consistency":   {"label": "Prediction Consistency",   "band": c_band, "description": c_desc, "detail": c_detail},
+    }
+
+
+def compute_overall_confidence_band(factors: dict[str, dict[str, str]]) -> str:
+    weights = {"High": 2, "Medium": 1, "Low": 0}
+    total = sum(weights.get(f["band"], 1) for f in factors.values())
+    if total >= 6:
+        return "High"
+    if total >= 3:
+        return "Medium"
+    return "Low"
+
+
+def build_articulated_narrative(result: dict[str, Any]) -> str:
+    probabilities = result["probabilities"]
+    p_accept = probabilities["Accepted"]
+    p_reject = probabilities["Negotiated"] + probabilities["Rejected"]
+    is_accepted = p_accept >= p_reject
+    gap_pp = abs(p_accept - p_reject) * 100
+
+    customer_name = str(result.get("inputs", {}).get("customer_name", "The customer"))
+
+    drivers = result.get("drivers", {})
+    all_drivers: list[dict[str, Any]] = []
+    for category in ("commercial_offer", "customer_relationship", "competitive_pressure", "deal_context"):
+        all_drivers.extend(drivers.get(category, []))
+    top_positive = max(
+        (d for d in all_drivers if d.get("direction") == "Positive"),
+        key=lambda d: d.get("impact_pp", 0),
+        default=None,
+    )
+    top_negative = min(
+        (d for d in all_drivers if d.get("direction") == "Negative"),
+        key=lambda d: d.get("impact_pp", 0),
+        default=None,
+    )
+
+    parts: list[str] = []
+
+    if is_accepted:
+        parts.append(
+            f"<strong>{escape(customer_name)}</strong> is projected to accept this offer at "
+            f"<strong>{p_accept:.0%}</strong> probability — a {gap_pp:.0f}-point lead over the {p_reject:.0%} rejection scenario."
+        )
+    else:
+        parts.append(
+            f"<strong>{escape(customer_name)}</strong> is more likely to reject or renegotiate at "
+            f"<strong>{p_reject:.0%}</strong>, versus {p_accept:.0%} acceptance — a {gap_pp:.0f}-point lean toward pushback."
+        )
+
+    if top_positive:
+        pos_text = top_positive["explanation"].strip().rstrip(".")
+        parts.append(f"{escape(pos_text)}.")
+
+    if top_negative:
+        neg_text = top_negative["explanation"].strip().rstrip(".")
+        if neg_text:
+            neg_text_lower = neg_text[0].lower() + neg_text[1:]
+        else:
+            neg_text_lower = neg_text
+        if top_positive:
+            parts.append(f"However, {escape(neg_text_lower)}.")
+        else:
+            parts.append(f"The principal risk: {escape(neg_text)}.")
+
+    if is_accepted:
+        parts.append("Recommend advancing the offer while monitoring the risk factor above.")
+    else:
+        name_lower = (top_negative or {}).get("name", "").lower()
+        if "price" in name_lower or "rebate" in name_lower:
+            parts.append("Recommend tightening the pricing or rebate terms before re-engagement.")
+        elif "volume" in name_lower or "share" in name_lower:
+            parts.append("Recommend revising the volume or share commitment before re-engagement.")
+        else:
+            parts.append("Recommend refining the offer terms and re-scoring before re-engagement.")
+    return " ".join(parts)
+
+
+def build_confidence_narrative(
+    result: dict[str, Any],
+    factors: dict[str, dict[str, str]],
+    overall_band: str,
+) -> str:
+    """Return an HTML bullet list summarising the confidence bucket — short, numeric, no filler."""
+    probabilities = result["probabilities"]
+    p_accept = probabilities["Accepted"]
+    p_reject = probabilities["Negotiated"] + probabilities["Rejected"]
+    gap_pp = abs(p_accept - p_reject) * 100
+    match_score = stable_match_score(result.get("inputs", {}))
+
+    d_band = factors.get("decisiveness", {}).get("band", "Medium")
+    h_band = factors.get("historical", {}).get("band", "Medium")
+    f_band = factors.get("reliability", {}).get("band", "Medium")
+    c_band = factors.get("consistency", {}).get("band", "Medium")
+    c_detail = factors.get("consistency", {}).get("detail", {})
+    lo = c_detail.get("lo")
+    hi = c_detail.get("hi")
+    perturb_range = f"{lo:.0f}–{hi:.0f}%" if lo is not None and hi is not None else "n/a"
+
+    decisive_tag = {"High": "decisive", "Medium": "moderate", "Low": "ambiguous"}[d_band]
+    hist_tag = {"High": "strong precedent", "Medium": "partial precedent", "Low": "limited precedent"}[h_band]
+    stability_tag = {"High": "stable", "Medium": "some sensitivity", "Low": "sensitive"}[c_band]
+    reliability_tag = {
+        "High": "all key inputs measured",
+        "Medium": "most inputs measured, 1 estimated",
+        "Low": "several inputs estimated",
+    }[f_band]
+    action = {
+        "High": "Proceed with standard risk margin.",
+        "Medium": "Validate key drivers with the account team before finalizing.",
+        "Low": "Treat as a hypothesis — gather more intel before deciding.",
+    }[overall_band]
+
+    bullets = [
+        f"<strong>Probability split:</strong> {p_accept:.0%} vs {p_reject:.0%} ({gap_pp:.0f}-pt gap) — {decisive_tag}",
+        f"<strong>Historical match:</strong> {match_score}% similarity — {hist_tag}",
+        f"<strong>Stability:</strong> Accept range {perturb_range} under stress-test — {stability_tag}",
+        f"<strong>Data quality:</strong> {reliability_tag}",
+        f"<strong>Action:</strong> {action}",
+    ]
+    items = "".join(f"<li>{b}</li>" for b in bullets)
+    return f"<ul style='margin:.1rem 0 0 1.1rem; padding:0; line-height:1.65;'>{items}</ul>"
+
+
+def render_confidence_bucket(factors: dict[str, dict[str, str]], overall_band: str) -> None:
+    band_color = {"High": "#19766F", "Medium": "#B44E00", "Low": "#DC2626"}[overall_band]
+    band_bg    = {"High": "#EAF8F6", "Medium": "#FFF3E8", "Low": "#FEE2E2"}[overall_band]
+    band_border= {"High": "#BDE4E0", "Medium": "#FFC58F", "Low": "#FCA5A5"}[overall_band]
+    st.markdown(
+        f"""
+        <div style="display:flex; align-items:center; gap:.9rem; margin: .3rem 0 .55rem 0;">
+            <span style='font-size:.72rem; font-weight:800; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.03rem;'>Confidence</span>
+            <span style='display:inline-flex; align-items:center; padding:.35rem .85rem; border-radius:999px;
+                background:{band_bg}; color:{band_color}; border:1px solid {band_border};
+                font-size:1.05rem; font-weight:820; letter-spacing:.02rem;'>{escape(overall_band)}</span>
+            <span style='color:var(--text-secondary); font-size:.85rem;'>Bucket derived from four sub-factors below.</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(4, gap="small")
+    factor_order = ["decisiveness", "historical", "reliability", "consistency"]
+    for col, key in zip(cols, factor_order):
+        factor = factors.get(key, {})
+        band = factor.get("band", "Medium")
+        desc = factor.get("description", "")
+        label = factor.get("label", key)
+        pill_color = {"High": "#19766F", "Medium": "#B44E00", "Low": "#DC2626"}[band]
+        pill_bg    = {"High": "#EAF8F6", "Medium": "#FFF3E8", "Low": "#FEE2E2"}[band]
+        pill_border= {"High": "#BDE4E0", "Medium": "#FFC58F", "Low": "#FCA5A5"}[band]
+        with col:
+            st.markdown(
+                f"""
+                <div style='border:1px solid var(--border); border-radius:12px; padding:.75rem .85rem;
+                            background:#FFFFFF; min-height:150px; box-shadow: 0 1px 2px rgba(31,31,41,.04);'>
+                    <div style='display:flex; align-items:center; justify-content:space-between; gap:.4rem; margin-bottom:.5rem;'>
+                        <div style='font-size:.82rem; font-weight:800; color:var(--text-primary); line-height:1.15;'>{escape(label)}</div>
+                        <span style='display:inline-flex; padding:.16rem .55rem; border-radius:999px;
+                            background:{pill_bg}; color:{pill_color}; border:1px solid {pill_border};
+                            font-size:.72rem; font-weight:800; letter-spacing:.02rem;'>{escape(band)}</span>
+                    </div>
+                    <div style='font-size:.82rem; color:var(--text-secondary); line-height:1.4;'>{escape(desc)}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
 def render_outcome(result: dict[str, Any] | None) -> None:
     st.markdown("<div class='section-title'>Pricing Simulation Outcome</div>", unsafe_allow_html=True)
-    st.markdown("<div class='section-subtitle'>Run a simulation to calculate probabilities and confidence.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-subtitle'>Run a simulation to calculate the likely outcome and confidence.</div>", unsafe_allow_html=True)
     if not result:
         st.info("Adjust the proposed levers and click Run Simulation.")
         return
 
     probabilities = result["probabilities"]
-    metric_cols = st.columns(5, gap="small")
+    p_accept = probabilities["Accepted"]
+    p_reject = probabilities["Negotiated"] + probabilities["Rejected"]
+    factors = result.get("confidence_factors")
+    overall_band = result.get("overall_confidence_band", result.get("confidence_band", "Medium"))
+    confidence_card_class = {
+        "High":   "metric-card-green",
+        "Medium": "metric-card-amber",
+        "Low":    "metric-card-red",
+    }.get(overall_band, "metric-card-blue")
+
+    metric_cols = st.columns(3, gap="small")
     with metric_cols[0]:
-        render_metric_card("Accepted", f"{probabilities['Accepted']:.0%}", "Likelihood customer accepts proposed offer", "metric-card-green")
+        render_metric_card("Accepted", f"{p_accept:.0%}", "Likelihood customer accepts proposed offer", "metric-card-green")
     with metric_cols[1]:
-        render_metric_card("Negotiated", f"{probabilities['Negotiated']:.0%}", "Likelihood customer requests changes", "metric-card-amber")
+        render_metric_card("Rejected", f"{p_reject:.0%}", "Likelihood customer rejects or renegotiates", "metric-card-red")
     with metric_cols[2]:
-        render_metric_card("Rejected", f"{probabilities['Rejected']:.0%}", "Likelihood customer rejects the offer", "metric-card-red")
-    with metric_cols[3]:
-        render_metric_card("Recommended", result["recommended_outcome"], "Highest probability outcome", "metric-card-blue", compact_value=True)
-    with metric_cols[4]:
-        render_metric_card("Confidence", f"{result['confidence_score']:.0f}%", f"{result['confidence_band']} confidence band", "metric-card-blue")
+        render_metric_card("Confidence", overall_band, "Overall confidence in the forecast", confidence_card_class, compact_value=True)
 
-    st.markdown("<div class='small-label' style='margin-top:.9rem;'>Probability distribution</div>", unsafe_allow_html=True)
-    render_stacked_bar(probabilities)
-
-    match_score = stable_match_score(result["inputs"])
-    st.markdown("<div class='small-label' style='margin-top:.9rem;'>Confidence interpretation</div>", unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <div class="narrative-card">
-            <strong>{result['confidence_score']:.1f}% confidence | {escape(result['confidence_band'])}</strong><br>
-            Similar deal match: <strong>{match_score}%</strong>. High confidence means the proposed scenario closely matches historical synthetic deal patterns.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    narrative_html = build_articulated_narrative(result)
     st.markdown("<div class='small-label' style='margin-top:.9rem;'>Narrative Summary</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='narrative-card'>{escape(result['narrative_summary'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='narrative-card'>{narrative_html}</div>", unsafe_allow_html=True)
+
+    if factors:
+        confidence_narrative_html = build_confidence_narrative(result, factors, overall_band)
+        st.markdown("<div class='small-label' style='margin-top:.9rem;'>Confidence Interpretation</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='narrative-card'>{confidence_narrative_html}</div>", unsafe_allow_html=True)
 
     product_results = result.get("product_results", [])
     if len(product_results) > 1:
@@ -1642,10 +2105,8 @@ def render_outcome(result: dict[str, Any] | None) -> None:
                 {
                     "Product": item["product"],
                     "Accepted": f"{item['probabilities']['Accepted']:.1%}",
-                    "Negotiated": f"{item['probabilities']['Negotiated']:.1%}",
-                    "Rejected": f"{item['probabilities']['Rejected']:.1%}",
-                    "Recommendation": item["recommended_outcome"],
-                    "Confidence": f"{item['confidence_score']:.1f}%",
+                    "Rejected": f"{(item['probabilities']['Negotiated'] + item['probabilities']['Rejected']):.1%}",
+                    "Recommendation": "Accepted" if item['probabilities']['Accepted'] >= (item['probabilities']['Negotiated'] + item['probabilities']['Rejected']) else "Rejected",
                 }
                 for item in product_results
             ]
@@ -1654,6 +2115,10 @@ def render_outcome(result: dict[str, Any] | None) -> None:
 
     st.markdown("<div style='height:.55rem;'></div>", unsafe_allow_html=True)
     render_driver_section(result["drivers"])
+
+    shap_contributions = result.get("shap_contributions")
+    if shap_contributions is not None:
+        render_shap_chart(shap_contributions)
 
 
 def save_scenario(customer: str, contract: str, scenario_inputs: dict[str, Any], result: dict[str, Any]) -> None:
@@ -1724,11 +2189,8 @@ def main() -> None:
     tab_simulator, tab_deep_dive = st.tabs(["Pricing Simulator", "Customer Deep Dive"])
 
     with tab_simulator:
-        left, right = st.columns([0.35, 0.65], gap="large")
-        with left:
-            with st.container(border=True):
-                run_clicked, reset_clicked, save_clicked = render_pricing_levers(product_scope, selected_brands, product_rows)
-
+        # Computed up front (reads already-initialized session_state) so the entire
+        # left column — levers panel + watchouts — can render inside one sticky wrapper.
         scenario_inputs_by_brand = {
             brand: build_scenario_inputs(product_rows[brand], product_scope, selected_brands, brand)
             for brand in selected_brands
@@ -1738,6 +2200,13 @@ def main() -> None:
             for brand, inputs in scenario_inputs_by_brand.items()
             for watchout in collect_scenario_watchouts(inputs)
         ]
+
+        left, right = st.columns([0.42, 0.58], gap="large")
+        with left:
+            with st.container(key="lever-sticky-panel"):
+                with st.container(border=True):
+                    run_clicked, reset_clicked, save_clicked = render_pricing_levers(product_scope, selected_brands, product_rows)
+                render_watchouts(watchouts)
 
         if run_clicked:
             st.session_state["latest_result"] = score_selected_products(
@@ -1759,9 +2228,6 @@ def main() -> None:
                     st.session_state["latest_result"],
                 )
                 st.toast("Scenario saved.")
-
-        with left:
-            render_watchouts(watchouts)
 
         with right:
             with st.container(border=True):
