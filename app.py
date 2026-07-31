@@ -14,7 +14,9 @@ import streamlit as st
 try:
     import shap  # noqa: F401
     SHAP_AVAILABLE = True
-except ImportError:
+except Exception:
+    # shap's JIT dependencies (numba/llvmlite) can raise non-ImportError
+    # exceptions in sandboxed hosting environments; degrade gracefully.
     SHAP_AVAILABLE = False
 
 try:
@@ -1051,7 +1053,7 @@ def compute_shap_contributions(
         return None
     try:
         import shap
-    except ImportError:
+    except Exception:
         return None
     try:
         feature_columns = feature_metadata["feature_columns"]
