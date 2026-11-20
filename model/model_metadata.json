@@ -1,0 +1,825 @@
+{
+  "model_version": "v38 (11.5): trained 2024-25 + 2025-26 + 2026-27 on v4 BOB data (fresh tuning, 4-Nov threshold rules); 2027-28 scored and shown (upcoming \u2014 prices = revised 26/27 offers carried, YoY 0, no outcomes); 16 individual drivers incl. buying group, multi-year, season, prior-season doses; season benchmark; 11/5/2026",
+  "model_type": "XGBoost binary classifier, one model per product (no preprocessing pipeline \u2014 missing values handled natively by the classifier)",
+  "created_utc": "2026-11-16T08:29:42.872875+00:00",
+  "software": {
+    "note": "model bundles serialised under this stack; xgboost is the model-critical pin (2.x misreads the 3.x base_score encoding silently - see tests/test_model_integrity.py)",
+    "xgboost": "3.3.0",
+    "python_build": "3.14",
+    "scikit_learn_build": "1.9.0",
+    "pandas_build": "3.0.2"
+  },
+  "season": "2027-2028",
+  "grain": "account_name x product_standardised x season",
+  "target_column": "outcome_clean",
+  "target_map": {
+    "Win": 1,
+    "Loss": 0
+  },
+  "class_labels": [
+    "Loss",
+    "Win"
+  ],
+  "feature_columns": [
+    "price_vs_std_benchmark_updated",
+    "bob_Prior Season Shr of Wallet_enc",
+    "apt_clinical_bucket_enc",
+    "bob_Prior Season HS Partnership Advocacy_enc",
+    "sam_risk_flag_product",
+    "flips_prior_2_seasons",
+    "yoy_ms_change_pct_prior",
+    "cde_engagement_length_log",
+    "cde_net_sentiment_score",
+    "negotiation_receptivity_score",
+    "premium_gap_vs_min_competitor_pct",
+    "yoy_price_change_pct",
+    "buying_group_category_cat",
+    "multi_year_flag",
+    "season_cat",
+    "log_prior_customer_doses"
+  ],
+  "categorical_features": {},
+  "standard_price_benchmark": {
+    "Viresta": 60.63,
+    "Immunexa": 13.77,
+    "Noventra": 60.63
+  },
+  "preprocessing": {
+    "numeric_imputation": "none \u2014 XGBoost native missing-value handling (classifier trained with missing=nan)",
+    "numeric_scaling": false,
+    "feature_order_enforced": true
+  },
+  "directional_constraints": {
+    "price_vs_std_benchmark_updated": 1,
+    "bob_Prior Season Shr of Wallet_enc": 0,
+    "apt_clinical_bucket_enc": 0,
+    "bob_Prior Season HS Partnership Advocacy_enc": 0,
+    "sam_risk_flag_product": 0,
+    "flips_prior_2_seasons": 0,
+    "yoy_ms_change_pct_prior": 0,
+    "cde_engagement_length_log": 0,
+    "cde_net_sentiment_score": 0,
+    "negotiation_receptivity_score": 0,
+    "premium_gap_vs_min_competitor_pct": -1,
+    "yoy_price_change_pct": -1,
+    "buying_group_category_cat": 0,
+    "multi_year_flag": 0,
+    "season_cat": 0,
+    "log_prior_customer_doses": 0
+  },
+  "scenario_convention": "full linkage (3 channels); yoy FROZEN",
+  "sensitivity_cutoff_rules": "S = |win probability at the season's standard benchmark price - win probability now| (pp; price vs benchmark 0, premium gap and YoY re-measured at the benchmark price). Low if S < the product's volume-weighted median or S < 0.05pp; High if S >= volume-weighted P70; else Medium. Sensitive flag (and the 2x2) = Medium or High.",
+  "sensitivity_classification": {
+    "basis": "standard benchmark (vw), v38 notebook (rule unchanged from v27 cell 103)",
+    "standard_price_benchmark": {
+      "Viresta": 60.63,
+      "Immunexa": 13.77,
+      "Noventra": 60.63
+    },
+    "low_boundary_pp_vw_median": {
+      "Viresta": 9.647972106933594,
+      "Immunexa": 0.3591790795326233,
+      "Noventra": 2.6394338607788086
+    },
+    "high_boundary_pp_vw_p70": {
+      "Viresta": 20.329952239990234,
+      "Immunexa": 5.742007255554199,
+      "Noventra": 12.952271461486816
+    },
+    "volume_weight": "market_volume_total"
+  },
+  "account_rule": "driving product = largest S x priority weight (HD 1.5 / Noventra 1.0 / STD 0.5); the account takes its S and band; confidence = that row's 'Standard benchmark' sheet confidence",
+  "training_population": "trained on 2024-2025 + 2025-2026 + 2026-2027; shown: season 2027-2028 scored (upcoming, no outcomes yet), the notebook's universe (a dead_net_final price; Geisinger excluded); 1101 rows (HD 367 / STD 367 / FLK 367)",
+  "products": {
+    "HD": {
+      "product_standardised": "Viresta",
+      "model_file": "xgboost_HD.joblib",
+      "model_sha256": "b77f498d4e7eefd85066cc29fc393fe380752de21676aaef36abe5681d945d1c",
+      "records": 367,
+      "wins": null,
+      "losses": null,
+      "actual_win_rate": null,
+      "predicted_wins": 117,
+      "predicted_losses": 250,
+      "outcomes_note": "season 2027-2028 is scored (upcoming): no actual outcomes yet",
+      "classification_threshold": 0.56,
+      "threshold_strategy": "max recall subject to precision >= 85%, chosen on the training seasons' grouped out-of-fold predictions (v38 notebook THRESHOLD_RULE, 4-Nov convention; the bundle's threshold_best_f1_cv = sam_xgb_metadata.json 'threshold used')",
+      "oof_metrics": {
+        "roc_auc": 0.876,
+        "brier": 0.132,
+        "precision": 0.852,
+        "recall": 0.843,
+        "f1": 0.847
+      },
+      "confusion_matrix": null,
+      "full_fit_params": {
+        "max_depth": 3,
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "min_child_weight": 5,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "reg_lambda": 10.0
+      },
+      "sensitivity_cutoff_pp": 9.647972106933594,
+      "sensitivity_high_cutoff_pp": 20.329952239990234,
+      "lever_ranges": {
+        "dead_net_price_p01": 39.786,
+        "dead_net_price_p50": 57.35,
+        "dead_net_price_p99": 71.34750000000001
+      }
+    },
+    "STD": {
+      "product_standardised": "Immunexa",
+      "model_file": "xgboost_STD.joblib",
+      "model_sha256": "940e4f812a1f4b4d59a2e993b2a4ca4f98677e784ae0eba56e6903494283bdb3",
+      "records": 367,
+      "wins": null,
+      "losses": null,
+      "actual_win_rate": null,
+      "predicted_wins": 127,
+      "predicted_losses": 240,
+      "outcomes_note": "season 2027-2028 is scored (upcoming): no actual outcomes yet",
+      "classification_threshold": 0.49,
+      "threshold_strategy": "max F1, chosen on the training seasons' grouped out-of-fold predictions (v38 notebook THRESHOLD_RULE, 4-Nov convention; the bundle's threshold_best_f1_cv = sam_xgb_metadata.json 'threshold used')",
+      "oof_metrics": {
+        "roc_auc": 0.885,
+        "brier": 0.133,
+        "precision": 0.804,
+        "recall": 0.748,
+        "f1": 0.775
+      },
+      "confusion_matrix": null,
+      "full_fit_params": {
+        "max_depth": 3,
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "min_child_weight": 5,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "reg_lambda": 10.0
+      },
+      "sensitivity_cutoff_pp": 0.3591790795326233,
+      "sensitivity_high_cutoff_pp": 5.742007255554199,
+      "lever_ranges": {
+        "dead_net_price_p01": 8.549999999999999,
+        "dead_net_price_p50": 13.77,
+        "dead_net_price_p99": 18.06
+      }
+    },
+    "FLK": {
+      "product_standardised": "Noventra",
+      "model_file": "xgboost_FLK.joblib",
+      "model_sha256": "2fc33058ca471f0f3dbf3c1fbac5bef48dbd6f8a6fe3fea8a95e3c60b61ec1ab",
+      "records": 367,
+      "wins": null,
+      "losses": null,
+      "actual_win_rate": null,
+      "predicted_wins": 81,
+      "predicted_losses": 286,
+      "outcomes_note": "season 2027-2028 is scored (upcoming): no actual outcomes yet",
+      "classification_threshold": 0.48,
+      "threshold_strategy": "max F0.5, chosen on the training seasons' grouped out-of-fold predictions (v38 notebook THRESHOLD_RULE, 4-Nov convention; the bundle's threshold_best_f1_cv = sam_xgb_metadata.json 'threshold used')",
+      "oof_metrics": {
+        "roc_auc": 0.771,
+        "brier": 0.19,
+        "precision": 0.666,
+        "recall": 0.627,
+        "f1": 0.646
+      },
+      "confusion_matrix": null,
+      "full_fit_params": {
+        "max_depth": 2,
+        "n_estimators": 300,
+        "learning_rate": 0.03,
+        "min_child_weight": 5,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "reg_lambda": 10.0
+      },
+      "sensitivity_cutoff_pp": 2.6394338607788086,
+      "sensitivity_high_cutoff_pp": 12.952271461486816,
+      "lever_ranges": {
+        "dead_net_price_p01": 39.786,
+        "dead_net_price_p50": 57.35,
+        "dead_net_price_p99": 71.34750000000001
+      }
+    }
+  },
+  "winloss_confidence": {
+    "method_version": "confidence-v5.1",
+    "formula": "0.30 x data completeness (D) + 0.30 x historical similarity (H) + 0.30 x decision margin (M) + 0.10 x model agreement (S); see src/confidence.py",
+    "factor_weights": {
+      "D": 0.3,
+      "H": 0.3,
+      "M": 0.3,
+      "S": 0.1
+    },
+    "group_weights": {
+      "relationship": 0.3,
+      "loyalty": 0.25,
+      "price": 0.3,
+      "clinical": 0.15
+    },
+    "provenance_scores": {
+      "observed": {
+        "completeness": 100.0,
+        "reliability": 100.0
+      },
+      "enriched": {
+        "completeness": 100.0,
+        "reliability": 90.0
+      },
+      "manual": {
+        "completeness": 100.0,
+        "reliability": 85.0
+      },
+      "carry_forward": {
+        "completeness": 0.0,
+        "reliability": 60.0
+      },
+      "imputed": {
+        "completeness": 0.0,
+        "reliability": 40.0
+      },
+      "missing": {
+        "completeness": 0.0,
+        "reliability": 0.0
+      }
+    },
+    "label_boundaries": {
+      "High": 85.0,
+      "Moderate": 60.0
+    },
+    "decision_margin": {
+      "basis": "|win probability - product threshold| in percentage points, either side",
+      "score_steps": {
+        "<5pp": 0,
+        "5-10pp": 25,
+        "10-15pp": 50,
+        "15-20pp": 75,
+        ">=20pp": 100
+      }
+    },
+    "stability": {
+      "basis": "spread (max - min) of P(win) across the 5 outer-fold models, percentage points; capped at 50 when the folds disagree on Win vs Loss",
+      "score_bands": {
+        "<2pp": 100,
+        "2-5pp": 80,
+        ">5-10pp": 50,
+        ">10pp": 20
+      }
+    },
+    "historical_similarity": {
+      "reference_rows": "training pool: 2024-2025 + 2025-2026 + 2026-2027 in-universe rows",
+      "numeric_bands": "P10-P90: 100, P5-P95: 75, P1-P99: 40, outside: 10",
+      "frequency_bands": ">=5%: 100, 1-5%: 75, >0-1%: 40, unseen: 0",
+      "coverage_caps": "coverage >= 70%: none; 40-70%: H <= 60; <40%: H <= 30; 0: H = 0"
+    },
+    "provenance_rules": {
+      "prior_season_drivers_observed": [
+        "sam_risk_flag_product",
+        "cde_engagement_length_log",
+        "cde_net_sentiment_score",
+        "negotiation_receptivity_score",
+        "apt_clinical_bucket_enc",
+        "buying_group_category_cat",
+        "multi_year_flag"
+      ],
+      "prior_season_rule": "2027-28 is predicted from 2026-27 values; those count as observed, not carry-forward",
+      "not_applicable_for_new_accounts": [
+        "log_prior_customer_doses",
+        "yoy_ms_change_pct_prior"
+      ],
+      "excluded_from_data_quality": [
+        "yoy_price_change_pct"
+      ],
+      "competitor_price": "own CI price and the 2025-26 x (1 + tier %) fill both count as recorded",
+      "no_data_category": "Share of Wallet / Partnership 'No Data' (0) counts as a recorded value"
+    },
+    "scenario_behavior": "recompute at any simulated price: S from the fold models at that price, M from the new win probability, H from the recomputed price features; a moved lever counts as a manual input in D.",
+    "historical_reference": {
+      "Viresta": {
+        "cde_engagement_length_log": {
+          "type": "numeric",
+          "n": 645,
+          "zero_share": 0.017054,
+          "quantiles": [
+            0.0,
+            4.94876,
+            5.726563,
+            9.87514,
+            10.286649,
+            11.245184
+          ]
+        },
+        "cde_net_sentiment_score": {
+          "type": "numeric",
+          "n": 427,
+          "zero_share": 0.421546,
+          "zero_inflated": true,
+          "quantiles": [
+            -1.0,
+            -1.0,
+            -0.5,
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "sam_risk_flag_product": {
+          "type": "discrete",
+          "n": 601,
+          "freq": {
+            "1": 0.617304,
+            "0": 0.382696
+          }
+        },
+        "log_prior_customer_doses": {
+          "type": "numeric",
+          "n": 937,
+          "zero_share": 0.154749,
+          "zero_inflated": true,
+          "quantiles": [
+            2.397895,
+            4.51086,
+            5.356489,
+            10.122056,
+            10.457287,
+            11.121733
+          ]
+        },
+        "bob_Prior Season Shr of Wallet_enc": {
+          "type": "discrete",
+          "n": 962,
+          "freq": {
+            "0": 0.411642,
+            "1": 0.20894,
+            "0.75": 0.152807,
+            "0.5": 0.138254,
+            "0.25": 0.088358
+          }
+        },
+        "flips_prior_2_seasons": {
+          "type": "discrete",
+          "n": 663,
+          "freq": {
+            "0": 0.825038,
+            "1": 0.161388,
+            "2": 0.013575
+          }
+        },
+        "yoy_ms_change_pct_prior": {
+          "type": "numeric",
+          "n": 634,
+          "zero_share": 0.48265,
+          "zero_inflated": true,
+          "quantiles": [
+            -100.0,
+            -100.0,
+            -94.154653,
+            57.642472,
+            95.849712,
+            100.0
+          ]
+        },
+        "multi_year_flag": {
+          "type": "discrete",
+          "n": 964,
+          "freq": {
+            "0": 0.837137,
+            "1": 0.162863
+          }
+        },
+        "price_vs_std_benchmark_updated": {
+          "type": "numeric",
+          "n": 964,
+          "zero_share": 0.007261,
+          "quantiles": [
+            -5.047464,
+            -1.007067,
+            0.004081,
+            20.240574,
+            20.831272,
+            30.925285
+          ]
+        },
+        "premium_gap_vs_min_competitor_pct": {
+          "type": "numeric",
+          "n": 779,
+          "zero_share": 0.0,
+          "quantiles": [
+            -20.68302,
+            -12.204622,
+            -10.577412,
+            10.563503,
+            13.238345,
+            23.694105
+          ]
+        },
+        "yoy_price_change_pct": {
+          "type": "numeric",
+          "n": 844,
+          "zero_share": 0.052133,
+          "zero_inflated": true,
+          "quantiles": [
+            -25.542975,
+            -14.83558,
+            -12.2193,
+            4.000654,
+            11.406548,
+            23.334008
+          ]
+        },
+        "negotiation_receptivity_score": {
+          "type": "discrete",
+          "n": 924,
+          "freq": {
+            "0": 0.429654,
+            "0.5": 0.411255,
+            "1": 0.159091
+          }
+        },
+        "buying_group_category_cat": {
+          "type": "discrete",
+          "n": 964,
+          "freq": {
+            "4": 0.580913,
+            "0": 0.165975,
+            "1": 0.150415,
+            "3": 0.054979,
+            "2": 0.047718
+          }
+        },
+        "apt_clinical_bucket_enc": {
+          "type": "discrete",
+          "n": 870,
+          "freq": {
+            "1": 0.76092,
+            "0": 0.23908
+          }
+        },
+        "bob_Prior Season HS Partnership Advocacy_enc": {
+          "type": "discrete",
+          "n": 962,
+          "freq": {
+            "0.5": 0.37422,
+            "0.25": 0.29106,
+            "0.75": 0.193347,
+            "0": 0.080042,
+            "1": 0.061331
+          }
+        }
+      },
+      "Immunexa": {
+        "cde_engagement_length_log": {
+          "type": "numeric",
+          "n": 659,
+          "zero_share": 0.019727,
+          "quantiles": [
+            0.0,
+            4.731803,
+            5.70711,
+            9.86758,
+            10.298936,
+            11.232388
+          ]
+        },
+        "cde_net_sentiment_score": {
+          "type": "numeric",
+          "n": 438,
+          "zero_share": 0.43379,
+          "zero_inflated": true,
+          "quantiles": [
+            -1.0,
+            -1.0,
+            -0.5,
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "sam_risk_flag_product": {
+          "type": "discrete",
+          "n": 591,
+          "freq": {
+            "1": 0.583756,
+            "0": 0.416244
+          }
+        },
+        "log_prior_customer_doses": {
+          "type": "numeric",
+          "n": 941,
+          "zero_share": 0.242295,
+          "zero_inflated": true,
+          "quantiles": [
+            2.397895,
+            4.039255,
+            5.081404,
+            10.670279,
+            11.09205,
+            11.594782
+          ]
+        },
+        "bob_Prior Season Shr of Wallet_enc": {
+          "type": "discrete",
+          "n": 973,
+          "freq": {
+            "0": 0.402878,
+            "1": 0.211716,
+            "0.75": 0.159301,
+            "0.5": 0.140802,
+            "0.25": 0.085303
+          }
+        },
+        "flips_prior_2_seasons": {
+          "type": "discrete",
+          "n": 672,
+          "freq": {
+            "0": 0.845238,
+            "1": 0.133929,
+            "2": 0.020833
+          }
+        },
+        "yoy_ms_change_pct_prior": {
+          "type": "numeric",
+          "n": 630,
+          "zero_share": 0.333333,
+          "zero_inflated": true,
+          "quantiles": [
+            -100.0,
+            -72.931994,
+            -29.543984,
+            11.373301,
+            26.744381,
+            88.276544
+          ]
+        },
+        "multi_year_flag": {
+          "type": "discrete",
+          "n": 975,
+          "freq": {
+            "0": 0.828718,
+            "1": 0.171282
+          }
+        },
+        "price_vs_std_benchmark_updated": {
+          "type": "numeric",
+          "n": 975,
+          "zero_share": 0.211282,
+          "zero_inflated": true,
+          "quantiles": [
+            -9.665373,
+            -3.037037,
+            -2.519745,
+            13.59437,
+            24.183007,
+            34.640523
+          ]
+        },
+        "premium_gap_vs_min_competitor_pct": {
+          "type": "numeric",
+          "n": 786,
+          "zero_share": 0.0,
+          "quantiles": [
+            -20.957193,
+            -8.006433,
+            -2.746209,
+            31.558418,
+            32.960051,
+            34.869582
+          ]
+        },
+        "yoy_price_change_pct": {
+          "type": "numeric",
+          "n": 858,
+          "zero_share": 0.005828,
+          "quantiles": [
+            -33.780125,
+            -23.514396,
+            -22.22436,
+            2.0,
+            2.003412,
+            15.524511
+          ]
+        },
+        "negotiation_receptivity_score": {
+          "type": "discrete",
+          "n": 940,
+          "freq": {
+            "0": 0.420213,
+            "0.5": 0.412766,
+            "1": 0.167021
+          }
+        },
+        "buying_group_category_cat": {
+          "type": "discrete",
+          "n": 975,
+          "freq": {
+            "4": 0.588718,
+            "0": 0.167179,
+            "1": 0.148718,
+            "3": 0.051282,
+            "2": 0.044103
+          }
+        },
+        "apt_clinical_bucket_enc": {
+          "type": "discrete",
+          "n": 882,
+          "freq": {
+            "1": 0.772109,
+            "0": 0.227891
+          }
+        },
+        "bob_Prior Season HS Partnership Advocacy_enc": {
+          "type": "discrete",
+          "n": 973,
+          "freq": {
+            "0.5": 0.380267,
+            "0.25": 0.26927,
+            "0.75": 0.208633,
+            "0": 0.077081,
+            "1": 0.064748
+          }
+        }
+      },
+      "Noventra": {
+        "cde_engagement_length_log": {
+          "type": "numeric",
+          "n": 577,
+          "zero_share": 0.020797,
+          "quantiles": [
+            0.0,
+            4.918168,
+            5.807706,
+            9.92376,
+            10.408828,
+            11.289192
+          ]
+        },
+        "cde_net_sentiment_score": {
+          "type": "numeric",
+          "n": 393,
+          "zero_share": 0.442748,
+          "zero_inflated": true,
+          "quantiles": [
+            -1.0,
+            -0.70003,
+            -0.5,
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "sam_risk_flag_product": {
+          "type": "discrete",
+          "n": 497,
+          "freq": {
+            "1": 0.60161,
+            "0": 0.39839
+          }
+        },
+        "log_prior_customer_doses": {
+          "type": "numeric",
+          "n": 762,
+          "zero_share": 0.435696,
+          "zero_inflated": true,
+          "quantiles": [
+            2.397895,
+            2.397895,
+            2.397895,
+            8.649585,
+            9.420132,
+            10.304652
+          ]
+        },
+        "bob_Prior Season Shr of Wallet_enc": {
+          "type": "discrete",
+          "n": 845,
+          "freq": {
+            "0": 0.401183,
+            "1": 0.222485,
+            "0.75": 0.15858,
+            "0.5": 0.132544,
+            "0.25": 0.085207
+          }
+        },
+        "flips_prior_2_seasons": {
+          "type": "discrete",
+          "n": 600,
+          "freq": {
+            "0": 0.791667,
+            "1": 0.186667,
+            "2": 0.021667
+          }
+        },
+        "yoy_ms_change_pct_prior": {
+          "type": "numeric",
+          "n": 502,
+          "zero_share": 0.414343,
+          "zero_inflated": true,
+          "quantiles": [
+            -100.0,
+            -85.906578,
+            -38.972976,
+            100.0,
+            100.0,
+            100.0
+          ]
+        },
+        "multi_year_flag": {
+          "type": "discrete",
+          "n": 847,
+          "freq": {
+            "0": 0.828808,
+            "1": 0.171192
+          }
+        },
+        "price_vs_std_benchmark_updated": {
+          "type": "numeric",
+          "n": 847,
+          "zero_share": 0.003542,
+          "quantiles": [
+            -5.047464,
+            -1.006596,
+            3.361921,
+            20.240574,
+            22.48062,
+            30.925285
+          ]
+        },
+        "premium_gap_vs_min_competitor_pct": {
+          "type": "numeric",
+          "n": 677,
+          "zero_share": 0.0,
+          "quantiles": [
+            -21.341819,
+            -14.616235,
+            -12.214909,
+            8.88878,
+            13.053967,
+            24.586667
+          ]
+        },
+        "yoy_price_change_pct": {
+          "type": "numeric",
+          "n": 751,
+          "zero_share": 0.005326,
+          "quantiles": [
+            -26.589508,
+            -16.001542,
+            -12.2193,
+            7.638889,
+            14.207108,
+            23.334008
+          ]
+        },
+        "negotiation_receptivity_score": {
+          "type": "discrete",
+          "n": 818,
+          "freq": {
+            "0": 0.424205,
+            "0.5": 0.40709,
+            "1": 0.168704
+          }
+        },
+        "buying_group_category_cat": {
+          "type": "discrete",
+          "n": 847,
+          "freq": {
+            "4": 0.598583,
+            "1": 0.159386,
+            "0": 0.14876,
+            "3": 0.053129,
+            "2": 0.040142
+          }
+        },
+        "apt_clinical_bucket_enc": {
+          "type": "discrete",
+          "n": 772,
+          "freq": {
+            "1": 0.760363,
+            "0": 0.239637
+          }
+        },
+        "bob_Prior Season HS Partnership Advocacy_enc": {
+          "type": "discrete",
+          "n": 845,
+          "freq": {
+            "0.5": 0.366864,
+            "0.25": 0.291124,
+            "0.75": 0.208284,
+            "0": 0.069822,
+            "1": 0.063905
+          }
+        }
+      }
+    }
+  },
+  "real_data": true,
+  "disclaimer": "Trained on 2024-25, 2025-26 and 2026-27 decided Health Systems records (v38 on v4 BOB data, m8 protocol); 2027-28 is the upcoming season scored here \u2014 it has no actual outcomes yet.  Scenario outputs are controlled model associations and should not be interpreted as causal price elasticities.",
+  "row_count": 1101,
+  "source_workbook": "11.5_HS_xgb_v38_train_2024_2025_2026_score_2027_28_bob_v4_zs_5nov_model_data.xlsx",
+  "source_sheet": "Data",
+  "source_sha256": "43a4b13fe809b8002c07e5fecc0b4e820a9183c2ae7e9ee476e9499668fb4e97"
+}

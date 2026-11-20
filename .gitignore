@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.claude/
+
+# Never commit credentials.
+.streamlit/secrets.toml
+
+# Source workbooks / exports.
+*.xlsx
+*.zip
+
+# Written at build time, if at all.
+BUILD_DATE

@@ -1,0 +1,23 @@
+# Model-critical pins: the models in model/ were saved under exactly this stack.
+# xgboost 3.3 needs Python 3.12+. Older xgboost misreads these models' base_score
+# and shifts every prediction, silently. Don't move numpy / scikit-learn / scipy /
+# xgboost independently of the model files.
+#
+# xgboost-cpu is the same library minus the ~300 MB of CUDA wheels the plain
+# "xgboost" package pulls on Linux (Streamlit Community Cloud).
+numpy==1.26.4
+pandas==2.1.4
+scikit-learn==1.4.2
+xgboost-cpu==3.3.0
+joblib==1.3.2
+scipy==1.17.1
+
+# App
+streamlit==1.58.0
+altair==6.1.0
+pyarrow==24.0.0
+fpdf2==2.8.8
+
+# Only used when sign-in is switched on (APP_REQUIRE_AUTH=1).
+Authlib==1.7.2
+httpx==0.28.1

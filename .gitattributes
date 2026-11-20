@@ -1,0 +1,13 @@
+# Normalise line endings. The repo stores LF; Windows checkouts get CRLF for
+# text files. Matters because these files are copied into a Linux container.
+* text=auto eol=lf
+
+# Never touch binaries. *.joblib is listed explicitly: the three XGBoost
+# pipelines are joblib files, and eol normalisation would corrupt them into a
+# load failure that looks unrelated to git.
+*.joblib binary
+*.parquet binary
+*.pkl binary
+*.xlsx binary
+*.png binary
+*.drawio -text
